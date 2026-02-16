@@ -1,140 +1,331 @@
-# OpenCord — Open-Source Discord Alternative
+# CLAUDE.md
 
-## Architecture
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-OpenCord is a self-hostable chat platform. Each deployment is a single **instance** (one community). The client connects to **multiple instances** simultaneously, each with independent auth.
+## Build & Dev Commands
 
-### Monorepo Structure (Nx)
-
-```
-apps/api/         — Go backend (chi router, gorilla/websocket)
-apps/web/         — React + Vite + Tauri v2 (web & desktop)
-apps/mobile/      — Expo React Native
-packages/ui/      — Shared React components
-packages/shared/  — Shared TypeScript types, constants, validation
-packages/crypto/  — E2EE (vodozemac WASM)
-packages/api-client/ — Typed API client (multi-instance)
-docker/           — Dockerfiles + docker-compose.yml
-```
-
-### Tech Stack
-
-- **Backend:** Go 1.22+, chi router, gorilla/websocket, PostgreSQL 16, Redis 7
-- **Web/Desktop:** React 18, TypeScript, Vite, Tailwind CSS, Tauri v2
-- **Mobile:** React Native (Expo), NativeWind
-- **State:** Zustand + React Query (TanStack Query)
-- **Auth:** JWT (access + refresh tokens), bcrypt
-- **E2EE:** Olm/Megolm via vodozemac WASM
-- **Voice:** WebRTC peer-to-peer (full mesh)
-
-## Build Commands
-
-### Root (Nx)
+### Go API (working directory: `apps/api/`)
 ```bash
-npm install                    # Install all dependencies
-npx nx run api:build           # Build Go API
-npx nx run api:dev             # Run API in dev mode
-npx nx run api:test            # Run Go tests
-npx nx run web:dev             # Vite dev server
-npx nx run web:build           # Production build
-npx nx run web:lint            # Lint web app
-npx nx run web:tauri dev       # Tauri desktop dev
-npx nx run web:tauri build     # Tauri desktop build
-npx nx run mobile:start        # Expo dev server
-npx nx run shared:build        # Build shared package
-npx nx run api-client:build    # Build API client
-npx nx run crypto:build        # Build crypto package
-npx nx run-many --target=build # Build everything
-npx nx run-many --target=test  # Test everything
-npx nx run-many --target=lint  # Lint everything
+go run ./cmd/server                  # Run dev server (port 8080, reads from env vars)
+go build -o bin/server ./cmd/server  # Build binary
+go test ./...                        # Test all packages
+go test ./internal/auth/...          # Test single package
+go vet ./...                         # Static analysis
+go mod tidy                          # Sync dependencies after changing imports
 ```
 
-### Go API (from apps/api/)
+### Web Frontend
 ```bash
-go build -o bin/server ./cmd/server    # Build
-go run ./cmd/server                     # Run
-go test ./...                           # Test all
-go test ./internal/auth/...             # Test specific package
-go vet ./...                            # Vet
+npx nx run web:dev       # Vite dev server on port 3000, proxies /api → localhost:8080
+npx nx run web:build     # Production build to apps/web/dist/
+npx nx run web:lint      # ESLint
+```
+
+### Shared Packages
+```bash
+npx nx run shared:build      # Build @opencord/shared
+npx nx run api-client:build  # Build @opencord/api-client (depends on shared)
+npx nx run ui:build          # Build @opencord/ui
+npx nx run crypto:build      # Build @opencord/crypto
+```
+
+### Mobile (Expo)
+```bash
+npx nx run mobile:start  # Expo dev server
+```
+
+### Nx (from repo root)
+```bash
+npm install                         # Install all workspace dependencies
+npx nx run-many --target=build      # Build all projects
+npx nx run-many --target=test       # Test all projects
+npx nx run-many --target=lint       # Lint all projects
 ```
 
 ### Docker
 ```bash
-docker compose up -d                    # Start all services
-docker compose up -d postgres redis     # Start only DB + cache
-docker compose down                     # Stop all
-docker compose logs -f api              # Follow API logs
+docker compose up -d postgres redis  # Start only DB + cache for local dev
+docker compose up -d                 # Start full stack (postgres, redis, api, web)
+docker compose down                  # Stop all services
+docker compose logs -f api           # Follow API logs
 ```
 
 ### Database Migrations
 ```bash
-# Migrations run automatically on API startup
-# Manual: use golang-migrate CLI
+# Migrations run automatically on API startup via golang-migrate
+# Manual migration with CLI:
 migrate -path apps/api/migrations -database "$DATABASE_URL" up
 migrate -path apps/api/migrations -database "$DATABASE_URL" down 1
 ```
 
+## Architecture Overview
+
+**OpenCord is a self-hostable Discord alternative. Each deployment is one instance (one community). There is no multi-server concept in the backend — the instance IS the server. The client manages connections to multiple instance URLs, each with fully independent auth sessions.**
+
+This is an Nx monorepo with npm workspaces. The Go backend and TypeScript frontend are independent — they share no code, only a contract defined by the REST API and WebSocket protocol.
+
+## Backend Architecture (`apps/api/`)
+
+Go 1.21+ backend using chi router. Single entry point at `cmd/server/main.go` that manually wires all dependencies (no DI framework, no dependency injection container).
+
+### Dependency Wiring Pattern
+`main.go` creates everything in order: `database.Connect()` → per-domain `NewPostgresRepository(db)` → `auth.NewService(authRepo, jwtSecret)` → per-domain `NewHandler(repo)` → chi router with routes. The WebSocket `Hub` is created as a singleton, started via `go hub.Run()`, and injected into the `message.Handler` so it can broadcast after DB writes.
+
+### Domain Package Pattern
+Each domain package in `internal/` follows this structure:
+- **`models.go`** — Request/response structs with JSON tags (camelCase). Go struct field names are PascalCase, JSON keys are camelCase.
+- **`repository.go`** — Defines a `Repository` interface and a `PostgresRepository` struct implementing it using raw `database/sql` (no ORM). All SQL uses positional params (`$1`, `$2`). Returns pointers to domain structs.
+- **`handler.go`** — HTTP handlers with signature `func(w http.ResponseWriter, r *http.Request)`. Each handler file defines its own local `writeJSON(w, data, status)` and `writeError(w, message, status)` helper functions (these are NOT shared across packages).
+- **`service.go`** — Only the `auth` package has a service layer currently. Other packages have handlers that call repositories directly.
+
+Domain packages: `auth`, `user`, `channel`, `message`, `member`, `invite`, `instance`, `keys`, `upload`, `ws`, `rtc`.
+
+### Cross-Package Dependencies
+- `message.Handler` depends on `ws.Hub` (to broadcast after writes)
+- `invite.Handler` depends on `member.Repository` (to create membership on join)
+- All authenticated handlers depend on `auth.UserFromContext(ctx)` to get the current user UUID
+- `ws.HandleWebSocket` takes an `AuthValidator` callback (closure over `authService.ValidateAccessToken`)
+
+### Auth System (`internal/auth/`)
+- **Access tokens:** JWT HS256, 15-minute expiry, user UUID in `sub` claim. Created by `auth.Service.generateTokens()`.
+- **Refresh tokens:** Random 32-byte hex string. Server stores SHA-256 hash in `refresh_tokens` table. 30-day expiry. On refresh, old token is deleted and new pair is issued (rotation).
+- **Middleware:** `auth.Handler.Middleware` is a chi middleware. Extracts `Authorization: Bearer <token>`, validates JWT, calls `auth.SetUserContext(ctx, userID)` to inject UUID into context. Other handlers retrieve it with `auth.UserFromContext(ctx)` which returns `(uuid.UUID, bool)`.
+- **Context key:** Uses a typed `contextKey` string type to avoid collisions: `const UserContextKey contextKey = "user"`.
+
+### WebSocket System (`internal/ws/`)
+Three files: `hub.go`, `client.go`, `handler.go`.
+
+- **Hub** (`hub.go`): Central goroutine with `register`, `unregister`, `broadcast` channels. Maintains `clients map[*Client]bool` and `channels map[string]map[*Client]bool` (channel ID → subscribed clients). Thread-safe via `sync.RWMutex`. The `Run()` method is an infinite select loop.
+- **Client** (`client.go`): Each WS connection gets a `Client` with `ReadPump()` and `WritePump()` goroutines. Constants: `writeWait=10s`, `pongWait=60s`, `pingPeriod=54s`, `maxMessageSize=4096`. Send buffer: `chan []byte` with capacity 256.
+- **Handler** (`handler.go`): `HandleWebSocket(hub, validateToken)` upgrades HTTP → WS. Auth via `?token=` query param (not header, because WebSocket API doesn't support custom headers). `CheckOrigin` returns true (CORS handled at router level).
+
+**Client → Server events:** `ping`, `subscribe_channel`, `unsubscribe_channel`, `typing_start`, `rtc:*`
+**Server → Client events:** `pong`, `message_create`, `message_update`, `message_delete`, `typing_start`, `rtc:*`
+
+All events are JSON: `{"event": "event_name", "data": {...}}`
+
+### Real-Time Message Flow
+1. Client sends `POST /api/channels/{id}/messages` with JSON body
+2. `message.Handler.Create` saves to DB via `repo.Create()`
+3. Handler calls `hub.BroadcastToChannel(channelID, ws.Event{Type: "message_create", Data: msg})`
+4. Hub marshals to JSON, sends to all clients subscribed to that channel
+5. On the frontend, `useWSMessages` hook receives the event and calls `queryClient.invalidateQueries()` to refetch
+
+### WebRTC Signaling (`internal/rtc/` + `ws/client.go`)
+RTC signaling is handled within the WebSocket client's `handleRTCEvent()`. Events with prefix `rtc:` are relayed to all peers in the channel. The `internal/rtc/` package is a documentation placeholder. Events: `rtc:join`, `rtc:offer`, `rtc:answer`, `rtc:ice_candidate`, `rtc:leave`.
+
+### File Upload (`internal/upload/`)
+Multipart form upload at `POST /api/upload`. Field name: `file`. Max size: 10MB. Allowed extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`. Files saved to `UPLOAD_PATH` directory with UUID filenames. Returns `{"data": {"url": "..."}}`. Uploaded files served statically at `/uploads/*`.
+
+### E2EE Key Management (`internal/keys/`)
+Server-side key storage only (server never sees plaintext messages):
+- `POST /api/keys/upload` — Upsert device identity key + batch insert one-time prekeys
+- `GET /api/keys/query?userId=<uuid>` — Fetch a user's device keys
+- `POST /api/keys/claim` — Atomically claim one unclaimed one-time key (UPDATE with subquery for atomicity)
+
+### Instance Info (`internal/instance/`)
+`instance_settings` is a singleton table (enforced by `CHECK (id = 1)`). `GET /api/instance` is the only public endpoint besides auth — used by clients to discover instance name, icon, description, and registration status before login.
+
+## Database Schema
+
+PostgreSQL 16. All tables use UUID primary keys via `uuid_generate_v4()`. Timestamps are `TIMESTAMPTZ`. Migration file: `apps/api/migrations/000001_init.up.sql`.
+
+**Tables:**
+- `users` — id, email (unique), username (unique), display_name, avatar_url, password_hash, created_at
+- `channels` — id, name, type (CHECK: 'text'|'voice'), position, created_at
+- `messages` — id, channel_id → channels (CASCADE), author_id → users (CASCADE), content, image_url, created_at, updated_at. Index: `idx_messages_channel_created` on (channel_id, created_at DESC) for cursor pagination.
+- `members` — id, user_id → users (CASCADE, UNIQUE), role (CHECK: 'owner'|'admin'|'member'), joined_at
+- `invites` — id, code (unique, 12-char hex), created_by → users, expires_at (nullable), created_at
+- `refresh_tokens` — id, user_id → users (CASCADE), token_hash (unique), expires_at, created_at
+- `instance_settings` — id (CHECK: =1, singleton), name, icon_url, description, registration_open (default true). Seeded with INSERT on creation.
+- `device_keys` — (user_id, device_id) PK, identity_key, signing_key, created_at
+- `one_time_keys` — id, user_id → users, device_id, key_id, key, claimed (bool). Index: `idx_otk_user_device` on (user_id, device_id, claimed).
+
+**Key SQL patterns:**
+- Cursor pagination: `WHERE created_at < (SELECT created_at FROM messages WHERE id = $before) ORDER BY created_at DESC LIMIT $limit`
+- Partial updates: `COALESCE($new, existing_column)` pattern
+- Null list handling: handlers check `if slice == nil { slice = []T{} }` before JSON encoding to return `[]` not `null`
+
+## REST API Routes
+
+Defined in `cmd/server/main.go`. Chi router uses `{param}` syntax (not `:param`).
+
+**Public (no auth):**
+- `GET /api/instance` — Instance info
+- `POST /api/auth/register` — `{email, username, displayName, password}` → `{accessToken, refreshToken, user}`
+- `POST /api/auth/login` — `{email, password}` → same response
+- `POST /api/auth/refresh` — `{refreshToken}` → new token pair
+
+**Authenticated (Bearer token):**
+- `DELETE /api/auth/logout` — `{refreshToken}` → 204
+- `GET /api/users/me`, `PATCH /api/users/me`
+- `POST /api/channels`, `GET /api/channels`, `GET /api/channels/{id}`, `PATCH /api/channels/{id}`, `DELETE /api/channels/{id}`
+- `GET /api/channels/{id}/messages?before=<uuid>&limit=50`, `POST /api/channels/{id}/messages`
+- `PATCH /api/messages/{id}`, `DELETE /api/messages/{id}` — ownership enforced (author only)
+- `POST /api/invites`, `GET /api/invites`, `POST /api/invites/{code}/join`
+- `GET /api/members`, `DELETE /api/members/{userId}` (admin/owner), `PATCH /api/members/{userId}` (owner only)
+- `POST /api/upload` — multipart file upload
+- `POST /api/keys/upload`, `GET /api/keys/query?userId=`, `POST /api/keys/claim`
+
+**WebSocket:** `GET /api/ws?token=<jwt>` — outside the `/api` route group, registered directly on the root router
+
+### Response Format
+```
+Success:      {"data": <object or array>}
+Error:        {"error": "human-readable message"}
+Paginated:    {"data": [...], "hasMore": true|false}
+No content:   HTTP 204 with empty body
+```
+
+### Authorization Rules
+- Message edit/delete: author only (checked via `existing.AuthorID != userID`)
+- Member kick: admin or owner
+- Role change: owner only
+- Invite creation: any authenticated member
+- Channel CRUD: any authenticated member (no role check currently)
+
+## Frontend Architecture (`apps/web/`)
+
+React 19 + Vite 6 + Tailwind CSS v4. Discord-like three-column layout.
+
+### Multi-Instance State (Core Concept)
+The client connects to multiple OpenCord instances simultaneously. Each instance has independent auth.
+
+**Zustand store** (`src/stores/instance-store.ts`):
+- State: `instances: Map<string, InstanceState>` + `activeInstanceUrl: string | null`
+- `InstanceState` holds: `url`, `info` (InstanceInfo), `user`, `accessToken`, `refreshToken`, `connection` (InstanceConnection object)
+- Persisted to localStorage via Zustand `persist` middleware. The `partialize` function excludes live `connection` objects. The `merge` function reconstitutes `Map` from serialized plain objects and sets `connection: null`.
+- On app load, `useInitConnections()` hook iterates stored instances, creates `InstanceConnection` objects for any with valid tokens, and calls `connectWS()`.
+
+**`@opencord/api-client` package** (`packages/api-client/`):
+- `HttpClient` — Fetch wrapper. Automatically adds `Authorization: Bearer` header. On 401, attempts token refresh via `POST /api/auth/refresh`, retries the original request, and calls `onTokenRefreshed` callback.
+- `InstanceConnection` — Manages one instance. Wraps `HttpClient` for REST and handles WebSocket with auto-reconnect (3s interval, max 10 attempts). Methods map 1:1 to REST endpoints. WS event handlers registered via `onWSEvent(handler)` which returns an unsubscribe function.
+- `ConnectionManager` — Manages multiple `InstanceConnection` objects. Persists to localStorage under key `opencord_instances`. (Note: the web app uses Zustand store directly instead of ConnectionManager.)
+
+### React Query Integration
+- Query keys always scoped by instance URL: `[instanceUrl, 'channels']`, `[instanceUrl, 'messages', channelId]`, `[instanceUrl, 'members']`
+- `useMessages()` uses `useInfiniteQuery` for cursor pagination. `getNextPageParam` returns the last message's ID for the `before` param.
+- `useWSMessages()` hook subscribes to a channel's WS events and calls `queryClient.invalidateQueries()` on `message_create`, `message_update`, `message_delete` events. This triggers React Query to refetch.
+- Default `staleTime: 30000` (30s), `retry: 1`.
+
+### Routing
+React Router v7. Routes: `/add-instance`, `/login` (redirects to add-instance), `/register` (redirects to add-instance), `/instance/:encodedUrl/channel/:channelId`. The `encodedUrl` is `encodeURIComponent(instanceUrl)`.
+
+### Vite Config
+- Path aliases: `@/` → `src/`, `@opencord/*` → `../../packages/*/src`
+- Dev server proxy: `/api` → `http://localhost:8080` (with WebSocket support)
+- Plugins: `@vitejs/plugin-react`, `@tailwindcss/vite`
+
+### Component Structure
+- `Layout` — Flex row: InstanceSidebar (72px) + ChannelSidebar (240px) + main content (flex-1) via `<Outlet />`
+- `InstanceSidebar` — Vertical list of instance avatars with active indicator (white pill). "+" button navigates to `/add-instance`.
+- `ChannelSidebar` — Instance name header, text/voice channel lists with `#`/speaker icons, inline channel creation input, user info panel at bottom.
+- `MessageList` — Reverses messages (API returns newest-first), groups consecutive messages from same author within 5 minutes, auto-scrolls to bottom on new messages.
+- `MessageInput` — Form with Enter to submit. Typing indicator throttled to one event per 3 seconds.
+- `MemberSidebar` — Groups members by role (owner, admin, member) with avatars.
+- `AddInstancePage` — Two-step flow: (1) enter URL, fetch instance info (2) login or register form.
+
+### Tauri Desktop
+Config at `apps/web/src-tauri/tauri.conf.json`. Same Vite app wrapped as native desktop. Dev URL: `http://localhost:3000`. Default window: 1200x800, min 800x600.
+
+## Shared Packages (`packages/`)
+
+### `@opencord/shared` (`packages/shared/`)
+- `types.ts` — All TypeScript interfaces matching Go backend models. UUIDs are `string`. Timestamps are `string` (ISO 8601). Nullable fields use `| null`. WebSocket event types are a union type `WSEventType`.
+- `constants.ts` — `WS_RECONNECT_INTERVAL=3000`, `WS_MAX_RECONNECT_ATTEMPTS=10`, `MESSAGE_PAGE_SIZE=50`, `MAX_MESSAGE_LENGTH=4000`, `MAX_IMAGE_SIZE=10MB`, `ACCESS_TOKEN_EXPIRY=15min`.
+- `validation.ts` — Validation functions returning `string | null` (null = valid): `validateEmail`, `validateUsername` (2-32 chars, alphanumeric+hyphens+underscores), `validatePassword` (min 8 chars), `validateChannelName`, `validateMessage`, `validateInstanceUrl` (uses `new URL()`), `validateDisplayName`.
+
+### `@opencord/ui` (`packages/ui/`)
+React components styled with Tailwind CSS classes (dark theme):
+- `Avatar` — Image or colored initials fallback. Deterministic color from name hash. Sizes: sm (32px), md (40px), lg (64px).
+- `Button` — Variants: primary (indigo), secondary (gray), danger (red), ghost (transparent). Sizes: sm, md, lg. Loading state with spinner.
+- `Input` — With optional label and error message. Uses `forwardRef`. Dark gray background.
+- `Spinner` — Animated SVG. Sizes: sm, md, lg.
+
+### `@opencord/crypto` (`packages/crypto/`)
+Stub implementation for E2EE. `OlmMachine` class with passthrough encrypt/decrypt (not actually encrypting in stub). Methods: `init()`, `getDeviceId()`, `getIdentityKeys()`, `generateOneTimeKeys(count)`, `encryptMessage(channelId, plaintext)`, `decryptMessage(channelId, senderId, ciphertext)`, `createOutboundSession()`, `exportKeys()`, `importKeys()`. Full implementation will use vodozemac compiled to WASM.
+
+`getOrCreateDeviceId()` utility persists device ID to localStorage under key `opencord_device_id`.
+
+## Mobile App (`apps/mobile/`)
+
+Expo React Native with NativeWind (Tailwind for RN). Uses Expo Router (file-based routing in `app/` directory).
+
+Screens: `app/_layout.tsx` (root Stack navigator with dark theme), `app/index.tsx` (home/welcome), `app/add-instance.tsx` (two-step URL+login flow).
+
+Uses same `@opencord/api-client` and `@opencord/shared` packages as web.
+
+## Docker Setup
+
+### Services (docker-compose.yml)
+- `postgres` — PostgreSQL 16 Alpine, port 5432, healthcheck via `pg_isready`, persistent volume
+- `redis` — Redis 7 Alpine, port 6379, healthcheck via `redis-cli ping`, persistent volume
+- `api` — Go binary, port 8080, depends on healthy postgres+redis, upload volume at `/app/uploads`
+- `web` — Nginx serving Vite build output, port 3000→80, depends on api
+
+### Dockerfiles
+- `docker/Dockerfile.api` — Multi-stage: `golang:1.22-alpine` builder → `alpine:3.19` runtime. Copies migrations alongside binary.
+- `docker/Dockerfile.web` — Multi-stage: `node:22-alpine` builder (runs `npx nx run web:build`) → `nginx:alpine` runtime.
+
+### Nginx (`docker/nginx.conf`)
+- SPA fallback: `try_files $uri $uri/ /index.html`
+- API proxy: `/api/` → `http://api:8080` with WebSocket upgrade headers and 86400s read timeout
+- Upload proxy: `/uploads/` → `http://api:8080`
+- Gzip enabled for text/css/js/json/xml
+
 ## Conventions
 
-### Go Backend
-- Package-per-domain: each domain (user, channel, message, etc.) has handler.go, service.go, repository.go, models.go
-- Handlers accept `http.ResponseWriter, *http.Request`, return JSON
-- Services contain business logic, accept repository interfaces
-- Repositories execute SQL, accept `*sql.DB` or `*sqlx.DB`
-- Errors returned as `{ "error": "message" }` with appropriate HTTP status
-- Auth middleware injects user ID into request context via `auth.UserFromContext(ctx)`
-- UUIDs for all primary keys
-- Timestamps in RFC3339 / ISO8601 format
-- Cursor-based pagination (not offset): `?before=<uuid>&limit=50`
-
-### TypeScript/React
-- Functional components only
-- Zustand for global state (multi-instance management)
-- React Query for server state (API data, cache invalidation via WebSocket)
-- Query keys scoped by instance URL: `[instanceUrl, 'channels']`
-- Tailwind CSS for styling (web), NativeWind (mobile)
-- Path aliases: `@/` maps to `src/`
-- Barrel exports from packages via index.ts
-
 ### Naming
-- Go: PascalCase exported, camelCase unexported
-- TypeScript: camelCase variables/functions, PascalCase components/types
-- SQL: snake_case tables and columns
-- REST: kebab-case URLs, camelCase JSON bodies
-- Files: kebab-case for TS, snake_case.go for Go
+- **Go:** PascalCase exported, camelCase unexported. Files: `snake_case.go`
+- **TypeScript:** camelCase variables/functions, PascalCase components/types/interfaces. Files: `kebab-case.ts` / `kebab-case.tsx`
+- **SQL:** snake_case tables and columns
+- **REST URLs:** kebab-case paths, camelCase JSON bodies
+- **React Query keys:** `[instanceUrl, resource, ...params]`
 
-### API Response Format
-```json
-// Success
-{ "data": { ... } }
+### API Patterns
+- All responses wrapped in `{"data": ...}` for success
+- Errors: `{"error": "human-readable message"}` with appropriate HTTP status
+- Paginated lists: `{"data": [...], "hasMore": true}`
+- Cursor pagination: `?before=<uuid>&limit=50` (not offset-based)
+- Null arrays: always return `[]` not `null` (handlers check `if slice == nil`)
+- 204 No Content: for DELETE and logout (no response body)
+- chi URL params use `{param}` syntax, retrieved via `chi.URLParam(r, "param")`
 
-// Error
-{ "error": "Human-readable message" }
+### Go Handler Pattern
+Every handler follows this exact pattern:
+1. Parse URL params / decode JSON body
+2. Get user from context via `auth.UserFromContext(r.Context())`
+3. Call repository method
+4. Optionally broadcast WebSocket event
+5. Call `writeJSON(w, data, statusCode)` or `writeError(w, message, statusCode)`
 
-// List with pagination
-{ "data": [...], "hasMore": true }
-```
+### Frontend State Pattern
+- Zustand for client-side state (instances, active instance, connections)
+- React Query for server state (API data)
+- WebSocket events invalidate React Query caches (not direct state mutation)
+- Instance URL used as namespace for all query keys
 
-### WebSocket Message Format
-```json
-{ "event": "event_name", "data": { ... } }
-```
+## Environment Variables
 
-### Environment Variables
-```
-DATABASE_URL=postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=change-me-in-production
-UPLOAD_PATH=./uploads
-INSTANCE_NAME=My OpenCord
-INSTANCE_URL=http://localhost:3000
-PORT=8080
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable` | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `JWT_SECRET` | `dev-secret-change-me` | HMAC secret for JWT signing |
+| `UPLOAD_PATH` | `./uploads` | Directory for uploaded files |
+| `INSTANCE_NAME` | `My OpenCord` | Display name in instance info |
+| `INSTANCE_URL` | `http://localhost:<PORT>` | Base URL for upload URLs |
+| `PORT` | `8080` | API server port |
+
+See `.env.example` for a copy-paste template.
 
 ## Key Design Decisions
 
-1. **One instance = one server.** No multi-server backend. Client manages multiple instance connections.
-2. **E2EE by default.** Server stores ciphertext only. No server-side search.
-3. **WebRTC full mesh** for voice. Works for small groups (<10). SFU needed for scale (post-MVP).
-4. **JWT with refresh tokens.** Short-lived access tokens (15min), long-lived refresh tokens (30 days).
-5. **No federation.** Each instance is independent. Users have separate accounts per instance.
+1. **One instance = one server.** No multi-server backend. The client manages multiple independent instance connections. Like email accounts — you're a different user on each instance.
+2. **No shared `writeJSON`/`writeError`.** Each handler package defines its own helpers. This avoids a shared `utils` package and keeps packages self-contained.
+3. **No service layer for most domains.** Only `auth` has a service. Other handlers call repositories directly. Add services when business logic grows beyond simple CRUD.
+4. **WebSocket auth via query param.** The WebSocket API doesn't support custom headers during handshake, so JWT is passed as `?token=`. The WS endpoint is registered outside the auth middleware group.
+5. **React Query invalidation over direct cache mutation.** WS events trigger `invalidateQueries()` to refetch, rather than surgically patching cache. Simpler, more correct, slightly more network usage.
+6. **E2EE is stubbed.** The `@opencord/crypto` package passes through plaintext. Full vodozemac WASM integration is pending. The server-side key management endpoints are fully implemented.
+7. **JWT with refresh token rotation.** On refresh, old token is deleted. This limits the window for stolen refresh tokens.
+8. **Connection pool:** `database.Connect()` sets `MaxOpenConns=25`, `MaxIdleConns=5`.
