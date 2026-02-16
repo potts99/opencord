@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacks]
+providers = ["go"]
+
+[deploy]
+startCommand = "./server"
+healthcheckPath = "/.well-known/jwks.json"
+healthcheckTimeout = 10
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[deploy.volumes]
+"/app/keys" = "auth_keys"
