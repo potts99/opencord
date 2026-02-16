@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "OpenCord",
+    "slug": "opencord",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "opencord",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.opencord.app"
+    },
+    "android": {
+      "package": "com.opencord.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      }
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}
