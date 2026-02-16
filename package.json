@@ -1,0 +1,23 @@
+{
+  "name": "opencord",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npx nx run web:dev",
+    "dev:api": "npx nx run api:dev",
+    "build": "npx nx run-many --target=build",
+    "test": "npx nx run-many --target=test",
+    "lint": "npx nx run-many --target=lint"
+  },
+  "devDependencies": {
+    "nx": "^20.3.0",
+    "@nx/js": "^20.3.0",
+    "@nx/vite": "^20.3.0",
+    "@nx/react": "^20.3.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.nx/
+*.log
+.env
+.DS_Store
+uploads/
+
+# Go
+apps/api/bin/
+apps/api/tmp/
+
+# Tauri
+apps/web/src-tauri/target/
+
+# Expo
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
