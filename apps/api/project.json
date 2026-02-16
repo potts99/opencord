@@ -1,0 +1,24 @@
+{
+  "name": "api",
+  "sourceRoot": "apps/api",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/api && go build -o bin/server ./cmd/server"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/api && go run ./cmd/server"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/api && go test ./..."
+      }
+    }
+  }
+}
