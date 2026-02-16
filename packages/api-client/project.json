@@ -1,0 +1,13 @@
+{
+  "name": "api-client",
+  "sourceRoot": "packages/api-client/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd packages/api-client && npx tsc"
+      },
+      "dependsOn": ["shared:build"]
+    }
+  }
+}

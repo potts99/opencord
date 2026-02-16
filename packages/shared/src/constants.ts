@@ -1,0 +1,11 @@
+export const API_VERSION = 'v1';
+export const WS_RECONNECT_INTERVAL = 3000;
+export const WS_MAX_RECONNECT_ATTEMPTS = 10;
+export const MESSAGE_PAGE_SIZE = 50;
+export const MAX_MESSAGE_LENGTH = 4000;
+export const MAX_USERNAME_LENGTH = 32;
+export const MAX_DISPLAY_NAME_LENGTH = 64;
+export const MAX_CHANNEL_NAME_LENGTH = 100;
+export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+export const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+export const ACCESS_TOKEN_EXPIRY = 15 * 60 * 1000; // 15 minutes in ms
