@@ -1,0 +1,25 @@
+{
+  "name": "web",
+  "sourceRoot": "apps/web/src",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/web && npx vite"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/web && npx vite build"
+      },
+      "dependsOn": ["shared:build", "ui:build", "api-client:build"]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd apps/web && npx eslint src/"
+      }
+    }
+  }
+}

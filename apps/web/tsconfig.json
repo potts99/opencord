@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@opencord/shared": ["../../packages/shared/src/index.ts"],
+      "@opencord/ui": ["../../packages/ui/src/index.ts"],
+      "@opencord/api-client": ["../../packages/api-client/src/index.ts"]
+    },
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/ui" },
+    { "path": "../../packages/api-client" }
+  ]
+}
