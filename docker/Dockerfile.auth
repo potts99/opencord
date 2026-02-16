@@ -1,0 +1,29 @@
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files
+COPY apps/auth/go.mod apps/auth/go.sum ./
+RUN go mod download
+
+# Copy source
+COPY apps/auth/ .
+
+# Build
+RUN CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
+
+# Runtime
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /server .
+COPY apps/auth/migrations/ ./migrations/
+
+RUN mkdir -p /app/keys
+
+EXPOSE 9090
+
+CMD ["./server"]

@@ -1,14 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { InstanceInfo, User } from '@opencord/shared';
+import type { InstanceInfo } from '@opencord/shared';
 import { InstanceConnection } from '@opencord/api-client';
 
 export interface InstanceState {
   url: string;
   info: InstanceInfo | null;
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
   connection: InstanceConnection | null;
 }
 
@@ -19,7 +16,6 @@ interface InstanceStore {
   addInstance: (url: string, info: InstanceInfo) => void;
   removeInstance: (url: string) => void;
   setActiveInstance: (url: string) => void;
-  setInstanceAuth: (url: string, user: User, accessToken: string, refreshToken: string) => void;
   setInstanceConnection: (url: string, connection: InstanceConnection) => void;
   getActiveConnection: () => InstanceConnection | null;
   getConnection: (url: string) => InstanceConnection | null;
@@ -36,9 +32,6 @@ export const useInstanceStore = create<InstanceStore>()(
         instances.set(url, {
           url,
           info,
-          user: null,
-          accessToken: null,
-          refreshToken: null,
           connection: null,
         });
         set({
@@ -61,15 +54,6 @@ export const useInstanceStore = create<InstanceStore>()(
       },
 
       setActiveInstance: (url) => set({ activeInstanceUrl: url }),
-
-      setInstanceAuth: (url, user, accessToken, refreshToken) => {
-        const instances = new Map(get().instances);
-        const existing = instances.get(url);
-        if (existing) {
-          instances.set(url, { ...existing, user, accessToken, refreshToken });
-          set({ instances });
-        }
-      },
 
       setInstanceConnection: (url, connection) => {
         const instances = new Map(get().instances);
@@ -99,9 +83,6 @@ export const useInstanceStore = create<InstanceStore>()(
           serializable[url] = {
             url: inst.url,
             info: inst.info,
-            user: inst.user,
-            accessToken: inst.accessToken,
-            refreshToken: inst.refreshToken,
           };
         }
         return {

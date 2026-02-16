@@ -2,6 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useChannels, useCreateChannel } from '@/hooks/use-channels';
 import { useInstanceStore } from '@/stores/instance-store';
+import { useAuthStore } from '@/stores/auth-store';
 import type { Channel } from '@opencord/shared';
 
 export function ChannelSidebar() {
@@ -11,6 +12,7 @@ export function ChannelSidebar() {
   const activeInstance = useInstanceStore((s) =>
     s.activeInstanceUrl ? s.instances.get(s.activeInstanceUrl) : null
   );
+  const authUser = useAuthStore((s) => s.user);
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
   const [showCreate, setShowCreate] = useState(false);
@@ -116,14 +118,14 @@ export function ChannelSidebar() {
       <div className="h-14 px-2 flex items-center bg-gray-900/50 border-t border-gray-900">
         <div className="flex items-center gap-2 px-2">
           <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-semibold">
-            {activeInstance?.user?.displayName?.[0]?.toUpperCase() ?? '?'}
+            {authUser?.displayName?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-white leading-tight">
-              {activeInstance?.user?.displayName ?? 'Not logged in'}
+              {authUser?.displayName ?? 'Not logged in'}
             </span>
             <span className="text-xs text-gray-400 leading-tight">
-              {activeInstance?.user?.username ?? ''}
+              {authUser?.username ?? ''}
             </span>
           </div>
         </div>

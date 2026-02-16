@@ -76,27 +76,7 @@
 - [ ] Message timestamps (relative: "2 minutes ago", absolute on hover)
 - [ ] "New messages" divider when scrolling up
 
-## Phase 5: End-to-End Encryption
-- [x] Database migration: device_keys, one_time_keys tables
-- [x] Key management API: POST /api/keys/upload, GET /api/keys/query, POST /api/keys/claim
-- [x] @opencord/crypto package with OlmMachine stub
-- [x] Device ID generation and localStorage persistence
-- [ ] Integrate vodozemac WASM bindings into @opencord/crypto
-- [ ] Device key generation on first login (Ed25519 signing + Curve25519 identity)
-- [ ] Upload device keys to server on login
-- [ ] One-time prekey generation + batch upload (replenish when low)
-- [ ] Olm session establishment (claim prekey → create session)
-- [ ] Megolm outbound session creation per channel
-- [ ] Megolm session key distribution via Olm (encrypted per-device)
-- [ ] Encrypt messages client-side before sending
-- [ ] Decrypt messages client-side on receive
-- [ ] Key persistence in IndexedDB (web) / Keychain (mobile/desktop)
-- [ ] Encrypted message display (lock icon, decryption errors)
-- [ ] Key export/import for device migration (passphrase-protected)
-- [ ] "Unable to decrypt" fallback UI for missing keys
-- [ ] Key verification UI (emoji/QR) — post-MVP, TOFU for now
-
-## Phase 6: Image Uploads
+## Phase 5: Image Uploads
 - [x] Multipart upload endpoint (POST /api/upload)
 - [x] File type validation (.jpg, .jpeg, .png, .gif, .webp)
 - [x] UUID filename generation, local file storage
@@ -108,11 +88,10 @@
 - [ ] Upload progress indicator
 - [ ] Image lightbox/modal on click
 - [ ] Image size limits enforced client-side
-- [ ] Client-side image encryption before upload (for E2EE)
 - [ ] Configurable S3/MinIO backend (instead of local storage)
 - [ ] Image thumbnails / resizing
 
-## Phase 7: Presence & Typing
+## Phase 6: Presence & Typing
 - [x] Typing indicator WS event (typing_start)
 - [x] Typing indicator throttle on client (3s debounce)
 - [ ] Typing indicator display UI ("User is typing...")
@@ -125,7 +104,7 @@
 - [ ] Custom status messages
 - [ ] "Last seen" timestamp for offline users
 
-## Phase 8: Voice Channels
+## Phase 7: Voice Channels
 - [x] WebRTC signaling relay over WebSocket (rtc:* events)
 - [x] Voice channel type in database (text|voice)
 - [x] Voice channels displayed in sidebar
@@ -142,7 +121,7 @@
 - [ ] Voice channel user limit
 - [ ] Screen sharing (post-MVP)
 
-## Phase 9: Desktop & Mobile
+## Phase 8: Desktop & Mobile
 - [x] Tauri v2 config in apps/web/src-tauri/
 - [x] Expo React Native app scaffolded
 - [x] Mobile home screen + add instance flow
@@ -160,7 +139,7 @@
 - [ ] Deep linking (opencord:// URL scheme)
 - [ ] Offline message queue (send when reconnected)
 
-## Phase 10: Polish & Self-Hosting
+## Phase 9: Polish & Self-Hosting
 - [ ] Rate limiting (per-IP and per-user)
 - [ ] Request body size limits
 - [ ] Input sanitization (XSS prevention)
@@ -190,10 +169,9 @@
 | 2. Auth + Instance | 12/16 | 4 | Core done |
 | 3. Channels & Members | 12/19 | 7 | Core done |
 | 4. Messaging | 13/24 | 11 | Core done |
-| 5. E2EE | 4/17 | 13 | Stubbed |
-| 6. Image Uploads | 5/14 | 9 | Backend done |
-| 7. Presence & Typing | 2/13 | 11 | Events only |
-| 8. Voice Channels | 3/15 | 12 | Signaling only |
-| 9. Desktop & Mobile | 3/16 | 13 | Scaffolded |
-| 10. Polish | 0/20 | 20 | Not started |
-| **Total** | **63/163** | **100** | **39% complete** |
+| 5. Image Uploads | 5/13 | 8 | Backend done |
+| 6. Presence & Typing | 2/13 | 11 | Events only |
+| 7. Voice Channels | 3/15 | 12 | Signaling only |
+| 8. Desktop & Mobile | 3/16 | 13 | Scaffolded |
+| 9. Polish | 0/20 | 20 | Not started |
+| **Total** | **59/145** | **86** | **41% complete** |

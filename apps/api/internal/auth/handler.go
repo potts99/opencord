@@ -7,90 +7,21 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service  *Service
+	userRepo UserCacheRepository
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+// UserCacheRepository is implemented by user.PostgresRepository to upsert from JWT claims.
+type UserCacheRepository interface {
+	UpsertFromClaims(claims *TokenClaims) error
 }
 
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if req.Email == "" || req.Username == "" || req.Password == "" || req.DisplayName == "" {
-		writeError(w, "all fields are required", http.StatusBadRequest)
-		return
-	}
-
-	resp, err := h.service.Register(req)
-	if err != nil {
-		if err == ErrEmailTaken {
-			writeError(w, "email already taken", http.StatusConflict)
-			return
-		}
-		if err == ErrUsernameTaken {
-			writeError(w, "username already taken", http.StatusConflict)
-			return
-		}
-		writeError(w, "registration failed", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, resp, http.StatusCreated)
+func NewHandler(service *Service, userRepo UserCacheRepository) *Handler {
+	return &Handler{service: service, userRepo: userRepo}
 }
 
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	resp, err := h.service.Login(req)
-	if err != nil {
-		if err == ErrInvalidCredentials {
-			writeError(w, "invalid email or password", http.StatusUnauthorized)
-			return
-		}
-		writeError(w, "login failed", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, resp, http.StatusOK)
-}
-
-func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	resp, err := h.service.RefreshTokens(req.RefreshToken)
-	if err != nil {
-		writeError(w, "invalid refresh token", http.StatusUnauthorized)
-		return
-	}
-
-	writeJSON(w, resp, http.StatusOK)
-}
-
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	_ = h.service.Logout(req.RefreshToken)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// Middleware authenticates requests using Bearer tokens.
+// Middleware authenticates requests using Bearer tokens from the central auth server.
+// It validates the ES256 JWT, upserts the user cache, and stores claims in context.
 func (h *Handler) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -111,8 +42,15 @@ func (h *Handler) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Upsert user into local cache table so JOINs work
+		if err := h.userRepo.UpsertFromClaims(claims); err != nil {
+			writeError(w, "failed to sync user", http.StatusInternalServerError)
+			return
+		}
+
 		ctx := r.Context()
 		ctx = SetUserContext(ctx, claims.UserID)
+		ctx = SetClaimsContext(ctx, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

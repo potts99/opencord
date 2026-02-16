@@ -17,13 +17,17 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 
 func (r *PostgresRepository) Get() (*InstanceInfo, error) {
 	info := &InstanceInfo{}
+	var authServerURL *string
 	err := r.db.QueryRow(
-		`SELECT name, icon_url, description, registration_open FROM instance_settings WHERE id = 1`,
-	).Scan(&info.Name, &info.IconURL, &info.Description, &info.RegistrationOpen)
+		`SELECT name, icon_url, description, registration_open, auth_server_url FROM instance_settings WHERE id = 1`,
+	).Scan(&info.Name, &info.IconURL, &info.Description, &info.RegistrationOpen, &authServerURL)
 	if err != nil {
 		return nil, err
 	}
 	info.Version = "0.1.0"
+	if authServerURL != nil {
+		info.AuthServerURL = *authServerURL
+	}
 	return info, nil
 }
 

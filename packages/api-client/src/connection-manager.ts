@@ -22,7 +22,6 @@ export class ConnectionManager {
         if (config.accessToken) {
           this.addConnection(config.url, {
             accessToken: config.accessToken,
-            refreshToken: config.refreshToken ?? undefined,
           });
         }
       }
@@ -48,17 +47,14 @@ export class ConnectionManager {
 
   addConnection(
     url: string,
-    options?: { accessToken?: string; refreshToken?: string }
+    options?: { accessToken?: string; onAuthFailure?: () => Promise<string | null> }
   ): InstanceConnection {
     const normalized = url.replace(/\/$/, '');
     if (this.connections.has(normalized)) {
       return this.connections.get(normalized)!;
     }
 
-    const conn = new InstanceConnection(normalized, {
-      ...options,
-      onTokenRefreshed: () => this.saveToStorage(),
-    });
+    const conn = new InstanceConnection(normalized, options);
     this.connections.set(normalized, conn);
     this.saveToStorage();
     return conn;

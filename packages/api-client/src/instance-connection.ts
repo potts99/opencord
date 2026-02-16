@@ -1,7 +1,4 @@
 import type {
-  AuthResponse,
-  RegisterRequest,
-  LoginRequest,
   InstanceInfo,
   Channel,
   CreateChannelRequest,
@@ -17,9 +14,6 @@ import type {
   User,
   WSEvent,
   ApiResponse,
-  DeviceKey,
-  UploadKeysRequest,
-  ClaimKeysRequest,
 } from '@opencord/shared';
 import { WS_RECONNECT_INTERVAL, WS_MAX_RECONNECT_ATTEMPTS } from '@opencord/shared';
 import { HttpClient } from './http-client';
@@ -40,8 +34,7 @@ export class InstanceConnection {
     url: string,
     options?: {
       accessToken?: string;
-      refreshToken?: string;
-      onTokenRefreshed?: (accessToken: string, refreshToken: string) => void;
+      onAuthFailure?: () => Promise<string | null>;
     }
   ) {
     this.url = url.replace(/\/$/, '');
@@ -52,46 +45,21 @@ export class InstanceConnection {
     return this._connected;
   }
 
-  // === Auth ===
+  setAccessToken(token: string) {
+    this.http.setAccessToken(token);
+  }
+
+  // === Instance ===
 
   async getInstanceInfo(): Promise<InstanceInfo> {
     const res = await this.http.request<ApiResponse<InstanceInfo>>('GET', '/api/instance', { auth: false });
     return res.data;
   }
 
-  async register(req: RegisterRequest): Promise<AuthResponse> {
-    const res = await this.http.request<ApiResponse<AuthResponse>>('POST', '/api/auth/register', {
-      body: req,
-      auth: false,
-    });
-    this.http.setTokens(res.data.accessToken, res.data.refreshToken);
-    return res.data;
-  }
-
-  async login(req: LoginRequest): Promise<AuthResponse> {
-    const res = await this.http.request<ApiResponse<AuthResponse>>('POST', '/api/auth/login', {
-      body: req,
-      auth: false,
-    });
-    this.http.setTokens(res.data.accessToken, res.data.refreshToken);
-    return res.data;
-  }
-
-  async logout(): Promise<void> {
-    await this.http.request('DELETE', '/api/auth/logout');
-    this.http.clearTokens();
-    this.disconnectWS();
-  }
-
   // === User ===
 
   async getMe(): Promise<User> {
     const res = await this.http.request<ApiResponse<User>>('GET', '/api/users/me');
-    return res.data;
-  }
-
-  async updateMe(data: { displayName?: string; avatarUrl?: string }): Promise<User> {
-    const res = await this.http.request<ApiResponse<User>>('PATCH', '/api/users/me', { body: data });
     return res.data;
   }
 
@@ -194,24 +162,6 @@ export class InstanceConnection {
     if (!response.ok) throw new Error('Upload failed');
     const data = await response.json();
     return data.data.url;
-  }
-
-  // === E2EE Keys ===
-
-  async uploadKeys(req: UploadKeysRequest): Promise<void> {
-    await this.http.request('POST', '/api/keys/upload', { body: req });
-  }
-
-  async queryKeys(userId: string): Promise<DeviceKey[]> {
-    const res = await this.http.request<ApiResponse<DeviceKey[]>>('GET', '/api/keys/query', {
-      params: { userId },
-    });
-    return res.data;
-  }
-
-  async claimKeys(req: ClaimKeysRequest): Promise<unknown> {
-    const res = await this.http.request<ApiResponse<unknown>>('POST', '/api/keys/claim', { body: req });
-    return res.data;
   }
 
   // === WebSocket ===

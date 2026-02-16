@@ -3,25 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { InstanceConnection } from '@opencord/api-client';
 import { Button, Input } from '@opencord/ui';
 import { useInstanceStore } from '@/stores/instance-store';
+import { useAuthStore } from '@/stores/auth-store';
 import { validateInstanceUrl } from '@opencord/shared';
 
 export function AddInstancePage() {
   const [url, setUrl] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<'url' | 'auth'>('url');
+  const [step, setStep] = useState<'url' | 'join'>('url');
   const [instanceUrl, setInstanceUrl] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-
-  // Auth form
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [password, setPassword] = useState('');
 
   const addInstance = useInstanceStore((s) => s.addInstance);
-  const setInstanceAuth = useInstanceStore((s) => s.setInstanceAuth);
   const setInstanceConnection = useInstanceStore((s) => s.setInstanceConnection);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const authServerUrl = useAuthStore((s) => s.authServerUrl);
   const navigate = useNavigate();
 
   const handleConnect = async () => {
@@ -36,9 +32,16 @@ export function AddInstancePage() {
     try {
       const conn = new InstanceConnection(url);
       const info = await conn.getInstanceInfo();
+
+      // Verify the instance trusts the same auth server
+      if (info.authServerUrl && authServerUrl && info.authServerUrl !== authServerUrl) {
+        setError('This instance uses a different auth server than your account.');
+        return;
+      }
+
       addInstance(url, info);
       setInstanceUrl(url);
-      setStep('auth');
+      setStep('join');
     } catch {
       setError('Could not connect to instance. Check the URL and try again.');
     } finally {
@@ -46,25 +49,25 @@ export function AddInstancePage() {
     }
   };
 
-  const handleAuth = async () => {
+  const handleJoin = async () => {
+    if (!inviteCode.trim()) {
+      setError('Invite code is required');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const conn = new InstanceConnection(instanceUrl);
-      let authResp;
+      const conn = new InstanceConnection(instanceUrl, {
+        accessToken: accessToken ?? undefined,
+      });
 
-      if (isLogin) {
-        authResp = await conn.login({ email, password });
-      } else {
-        authResp = await conn.register({ email, username, displayName, password });
-      }
-
-      setInstanceAuth(instanceUrl, authResp.user, authResp.accessToken, authResp.refreshToken);
+      await conn.joinWithInvite(inviteCode.trim());
       conn.connectWS();
       setInstanceConnection(instanceUrl, conn);
       navigate('/');
     } catch (e: any) {
-      setError(e.message ?? 'Authentication failed');
+      setError(e.message ?? 'Failed to join instance');
     } finally {
       setLoading(false);
     }
@@ -101,59 +104,27 @@ export function AddInstancePage() {
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
       <div className="bg-gray-800 p-8 rounded-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-white mb-2">
-          {isLogin ? 'Sign In' : 'Create Account'}
-        </h1>
+        <h1 className="text-2xl font-bold text-white mb-2">Join Instance</h1>
         <p className="text-gray-400 mb-6">
-          {isLogin ? 'Sign in to' : 'Create an account on'} {instanceUrl}
+          Enter an invite code to join {instanceUrl}
         </p>
-
-        <div className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          {!isLogin && (
-            <>
-              <Input
-                label="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-              <Input
-                label="Display Name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </>
-          )}
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error}
-          />
-        </div>
-
-        <Button onClick={handleAuth} loading={loading} className="w-full mt-6">
-          {isLogin ? 'Sign In' : 'Create Account'}
+        <Input
+          label="Invite Code"
+          value={inviteCode}
+          onChange={(e) => setInviteCode(e.target.value)}
+          placeholder="Enter invite code"
+          error={error}
+          onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+        />
+        <Button onClick={handleJoin} loading={loading} className="w-full mt-4">
+          Join
         </Button>
-
-        <p className="text-center mt-4 text-sm text-gray-400">
-          {isLogin ? "Don't have an account? " : 'Already have an account? '}
-          <button
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError(null);
-            }}
-            className="text-indigo-400 hover:text-indigo-300"
-          >
-            {isLogin ? 'Sign Up' : 'Sign In'}
-          </button>
-        </p>
+        <button
+          onClick={() => { setStep('url'); setError(null); }}
+          className="w-full mt-3 text-sm text-gray-400 hover:text-gray-300"
+        >
+          Back
+        </button>
       </div>
     </div>
   );

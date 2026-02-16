@@ -118,6 +118,7 @@ export interface InstanceInfo {
   description: string | null;
   version: string;
   registrationOpen: boolean;
+  authServerUrl: string;
 }
 
 // WebSocket Events
@@ -134,27 +135,6 @@ export type WSEventType =
 export interface WSEvent<T = unknown> {
   event: WSEventType;
   data: T;
-}
-
-// E2EE
-export interface DeviceKey {
-  userId: string;
-  deviceId: string;
-  identityKey: string;
-  signingKey: string;
-  createdAt: string;
-}
-
-export interface UploadKeysRequest {
-  deviceId: string;
-  identityKey: string;
-  signingKey: string;
-  oneTimeKeys: Array<{ keyId: string; key: string }>;
-}
-
-export interface ClaimKeysRequest {
-  userId: string;
-  deviceId: string;
 }
 
 // API Response wrapper

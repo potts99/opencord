@@ -4,12 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Dev Commands
 
-### Go API (working directory: `apps/api/`)
+### Central Auth Server (working directory: `apps/auth/`)
+```bash
+go run ./cmd/server                  # Run auth server (port 9090)
+go build -o bin/server ./cmd/server  # Build binary
+go test ./...                        # Test all packages
+go vet ./...                         # Static analysis
+go mod tidy                          # Sync dependencies
+```
+
+### Instance API (working directory: `apps/api/`)
 ```bash
 go run ./cmd/server                  # Run dev server (port 8080, reads from env vars)
 go build -o bin/server ./cmd/server  # Build binary
 go test ./...                        # Test all packages
-go test ./internal/auth/...          # Test single package
 go vet ./...                         # Static analysis
 go mod tidy                          # Sync dependencies after changing imports
 ```
@@ -26,7 +34,6 @@ npx nx run web:lint      # ESLint
 npx nx run shared:build      # Build @opencord/shared
 npx nx run api-client:build  # Build @opencord/api-client (depends on shared)
 npx nx run ui:build          # Build @opencord/ui
-npx nx run crypto:build      # Build @opencord/crypto
 ```
 
 ### Mobile (Expo)
@@ -44,10 +51,11 @@ npx nx run-many --target=lint       # Lint all projects
 
 ### Docker
 ```bash
-docker compose up -d postgres redis  # Start only DB + cache for local dev
-docker compose up -d                 # Start full stack (postgres, redis, api, web)
-docker compose down                  # Stop all services
-docker compose logs -f api           # Follow API logs
+docker compose up -d postgres postgres-auth redis  # Start DBs + cache for local dev
+docker compose up -d                               # Start full stack
+docker compose down                                # Stop all services
+docker compose logs -f auth                        # Follow auth server logs
+docker compose logs -f api                         # Follow API logs
 ```
 
 ### Database Migrations
@@ -60,16 +68,35 @@ migrate -path apps/api/migrations -database "$DATABASE_URL" down 1
 
 ## Architecture Overview
 
-**OpenCord is a self-hostable Discord alternative. Each deployment is one instance (one community). There is no multi-server concept in the backend — the instance IS the server. The client manages connections to multiple instance URLs, each with fully independent auth sessions.**
+**OpenCord is a self-hostable Discord alternative with centralized authentication.** A central auth server (`apps/auth/`) owns all user identity — registration, login, passwords, and JWT issuance. Instance backends (`apps/api/`) are stateless JWT validators that trust the auth server's ES256 signatures via JWKS. The same account (username, avatar, email) works across every instance.
 
-This is an Nx monorepo with npm workspaces. The Go backend and TypeScript frontend are independent — they share no code, only a contract defined by the REST API and WebSocket protocol.
+```
+Client ──① register/login──→ Central Auth Server (apps/auth/, port 9090)
+       ←── JWT (ES256) ──────┘         │
+       ──② Bearer JWT──→ Instance (apps/api/, port 8080)
+                          validates via JWKS public key
+```
 
-## Backend Architecture (`apps/api/`)
+This is an Nx monorepo with npm workspaces. The Go backends and TypeScript frontend are independent — they share no code, only a contract defined by the REST API and WebSocket protocol.
+
+## Central Auth Server (`apps/auth/`)
+
+Go 1.21+ standalone service. Owns all user identity: registration, login, password hashing (bcrypt), ES256 JWT signing, refresh token rotation, profile management.
+
+**Key files:** `cmd/server/main.go` (entry point), `internal/auth/service.go` (core logic), `internal/auth/jwks.go` (ES256 key pair management + JWKS endpoint), `internal/auth/handler.go` (HTTP handlers), `internal/auth/repository.go` (PostgreSQL queries).
+
+**JWT format:** ES256 (asymmetric). Claims include `iss`, `sub` (user UUID), `exp`, `iat`, `username`, `display_name`, `avatar_url`. `kid` header enables key rotation. Expiry: 15 minutes.
+
+**JWKS endpoint:** `GET /.well-known/jwks.json` — returns ES256 public key in standard JWK format. Instances fetch this to validate JWTs locally.
+
+**Key management:** On startup, loads P-256 key pair from `KEY_DIR` (PEM files) or auto-generates if missing. `kid` = truncated SHA-256 of public key.
+
+## Instance Backend (`apps/api/`)
 
 Go 1.21+ backend using chi router. Single entry point at `cmd/server/main.go` that manually wires all dependencies (no DI framework, no dependency injection container).
 
 ### Dependency Wiring Pattern
-`main.go` creates everything in order: `database.Connect()` → per-domain `NewPostgresRepository(db)` → `auth.NewService(authRepo, jwtSecret)` → per-domain `NewHandler(repo)` → chi router with routes. The WebSocket `Hub` is created as a singleton, started via `go hub.Run()`, and injected into the `message.Handler` so it can broadcast after DB writes.
+`main.go` creates everything in order: `database.Connect()` → `auth.NewJWKSClient(authServerURL)` → per-domain `NewPostgresRepository(db)` → `auth.NewService(jwksClient)` → `auth.NewHandler(authService, userRepo)` → per-domain `NewHandler(repo)` → chi router with routes. The WebSocket `Hub` is created as a singleton, started via `go hub.Run()`, and injected into the `message.Handler` so it can broadcast after DB writes.
 
 ### Domain Package Pattern
 Each domain package in `internal/` follows this structure:
@@ -78,7 +105,7 @@ Each domain package in `internal/` follows this structure:
 - **`handler.go`** — HTTP handlers with signature `func(w http.ResponseWriter, r *http.Request)`. Each handler file defines its own local `writeJSON(w, data, status)` and `writeError(w, message, status)` helper functions (these are NOT shared across packages).
 - **`service.go`** — Only the `auth` package has a service layer currently. Other packages have handlers that call repositories directly.
 
-Domain packages: `auth`, `user`, `channel`, `message`, `member`, `invite`, `instance`, `keys`, `upload`, `ws`, `rtc`.
+Domain packages: `auth`, `user`, `channel`, `message`, `member`, `invite`, `instance`, `upload`, `ws`, `rtc`.
 
 ### Cross-Package Dependencies
 - `message.Handler` depends on `ws.Hub` (to broadcast after writes)
@@ -87,10 +114,12 @@ Domain packages: `auth`, `user`, `channel`, `message`, `member`, `invite`, `inst
 - `ws.HandleWebSocket` takes an `AuthValidator` callback (closure over `authService.ValidateAccessToken`)
 
 ### Auth System (`internal/auth/`)
-- **Access tokens:** JWT HS256, 15-minute expiry, user UUID in `sub` claim. Created by `auth.Service.generateTokens()`.
-- **Refresh tokens:** Random 32-byte hex string. Server stores SHA-256 hash in `refresh_tokens` table. 30-day expiry. On refresh, old token is deleted and new pair is issued (rotation).
-- **Middleware:** `auth.Handler.Middleware` is a chi middleware. Extracts `Authorization: Bearer <token>`, validates JWT, calls `auth.SetUserContext(ctx, userID)` to inject UUID into context. Other handlers retrieve it with `auth.UserFromContext(ctx)` which returns `(uuid.UUID, bool)`.
-- **Context key:** Uses a typed `contextKey` string type to avoid collisions: `const UserContextKey contextKey = "user"`.
+- **No local auth.** Instances do NOT handle registration, login, or token issuance. All auth goes through the central auth server.
+- **JWKS client** (`jwks_client.go`): Fetches ES256 public keys from `{AUTH_SERVER_URL}/.well-known/jwks.json` on startup. Background goroutine refreshes every 5 minutes. On unknown `kid`, triggers immediate refetch (handles key rotation).
+- **JWT validation:** `auth.Service.ValidateAccessToken()` uses ES256 public key from JWKS client. Extracts `sub` (user UUID), `username`, `display_name`, `avatar_url` into `TokenClaims`.
+- **Middleware:** `auth.Handler.Middleware` extracts `Authorization: Bearer <token>`, validates JWT via JWKS, upserts user into local cache table (for JOINs), stores both `UserID` and full `TokenClaims` in context.
+- **User cache upsert:** `user.PostgresRepository.UpsertFromClaims(claims)` does `INSERT ... ON CONFLICT (id) DO UPDATE` to sync profile data from JWT claims into the local `users` table.
+- **Context keys:** `UserContextKey` for UUID, `ClaimsContextKey` for full `*TokenClaims`.
 
 ### WebSocket System (`internal/ws/`)
 Three files: `hub.go`, `client.go`, `handler.go`.
@@ -117,29 +146,26 @@ RTC signaling is handled within the WebSocket client's `handleRTCEvent()`. Event
 ### File Upload (`internal/upload/`)
 Multipart form upload at `POST /api/upload`. Field name: `file`. Max size: 10MB. Allowed extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`. Files saved to `UPLOAD_PATH` directory with UUID filenames. Returns `{"data": {"url": "..."}}`. Uploaded files served statically at `/uploads/*`.
 
-### E2EE Key Management (`internal/keys/`)
-Server-side key storage only (server never sees plaintext messages):
-- `POST /api/keys/upload` — Upsert device identity key + batch insert one-time prekeys
-- `GET /api/keys/query?userId=<uuid>` — Fetch a user's device keys
-- `POST /api/keys/claim` — Atomically claim one unclaimed one-time key (UPDATE with subquery for atomicity)
-
 ### Instance Info (`internal/instance/`)
-`instance_settings` is a singleton table (enforced by `CHECK (id = 1)`). `GET /api/instance` is the only public endpoint besides auth — used by clients to discover instance name, icon, description, and registration status before login.
+`instance_settings` is a singleton table (enforced by `CHECK (id = 1)`). `GET /api/instance` is the only public endpoint — used by clients to discover instance name, icon, description, registration status, and `authServerUrl` before joining. The `auth_server_url` column is seeded from the `AUTH_SERVER_URL` env var on startup.
 
 ## Database Schema
 
-PostgreSQL 16. All tables use UUID primary keys via `uuid_generate_v4()`. Timestamps are `TIMESTAMPTZ`. Migration file: `apps/api/migrations/000001_init.up.sql`.
+### Central Auth Database
+PostgreSQL (PlanetScale in prod, local in dev). Migration: `apps/auth/migrations/000001_init.up.sql`.
+- `users` — id, email (unique), username (unique), display_name, avatar_url, password_hash, created_at, updated_at
+- `refresh_tokens` — id, user_id → users (CASCADE), token_hash (unique), expires_at, created_at
+
+### Instance Database
+PostgreSQL 16. All tables use UUID primary keys via `uuid_generate_v4()`. Timestamps are `TIMESTAMPTZ`. Migrations: `apps/api/migrations/`.
 
 **Tables:**
-- `users` — id, email (unique), username (unique), display_name, avatar_url, password_hash, created_at
+- `users` — **Cache table** upserted from JWT claims. id, email (nullable), username (unique), display_name, avatar_url, password_hash (nullable, legacy), created_at, updated_at
 - `channels` — id, name, type (CHECK: 'text'|'voice'), position, created_at
 - `messages` — id, channel_id → channels (CASCADE), author_id → users (CASCADE), content, image_url, created_at, updated_at. Index: `idx_messages_channel_created` on (channel_id, created_at DESC) for cursor pagination.
 - `members` — id, user_id → users (CASCADE, UNIQUE), role (CHECK: 'owner'|'admin'|'member'), joined_at
 - `invites` — id, code (unique, 12-char hex), created_by → users, expires_at (nullable), created_at
-- `refresh_tokens` — id, user_id → users (CASCADE), token_hash (unique), expires_at, created_at
-- `instance_settings` — id (CHECK: =1, singleton), name, icon_url, description, registration_open (default true). Seeded with INSERT on creation.
-- `device_keys` — (user_id, device_id) PK, identity_key, signing_key, created_at
-- `one_time_keys` — id, user_id → users, device_id, key_id, key, claimed (bool). Index: `idx_otk_user_device` on (user_id, device_id, claimed).
+- `instance_settings` — id (CHECK: =1, singleton), name, icon_url, description, registration_open (default true), auth_server_url. Seeded with INSERT on creation.
 
 **Key SQL patterns:**
 - Cursor pagination: `WHERE created_at < (SELECT created_at FROM messages WHERE id = $before) ORDER BY created_at DESC LIMIT $limit`
@@ -150,22 +176,30 @@ PostgreSQL 16. All tables use UUID primary keys via `uuid_generate_v4()`. Timest
 
 Defined in `cmd/server/main.go`. Chi router uses `{param}` syntax (not `:param`).
 
-**Public (no auth):**
-- `GET /api/instance` — Instance info
+### Central Auth Routes (`apps/auth/`)
+**Public:**
+- `GET /.well-known/jwks.json` — ES256 public key in JWK format
 - `POST /api/auth/register` — `{email, username, displayName, password}` → `{accessToken, refreshToken, user}`
 - `POST /api/auth/login` — `{email, password}` → same response
 - `POST /api/auth/refresh` — `{refreshToken}` → new token pair
 
 **Authenticated (Bearer token):**
 - `DELETE /api/auth/logout` — `{refreshToken}` → 204
-- `GET /api/users/me`, `PATCH /api/users/me`
+- `GET /api/users/me` — profile
+- `PATCH /api/users/me` — update displayName/avatarUrl
+
+### Instance Routes (`apps/api/`)
+**Public (no auth):**
+- `GET /api/instance` — Instance info (includes `authServerUrl`)
+
+**Authenticated (Bearer token from central auth):**
+- `GET /api/users/me` — from local cache
 - `POST /api/channels`, `GET /api/channels`, `GET /api/channels/{id}`, `PATCH /api/channels/{id}`, `DELETE /api/channels/{id}`
 - `GET /api/channels/{id}/messages?before=<uuid>&limit=50`, `POST /api/channels/{id}/messages`
 - `PATCH /api/messages/{id}`, `DELETE /api/messages/{id}` — ownership enforced (author only)
 - `POST /api/invites`, `GET /api/invites`, `POST /api/invites/{code}/join`
 - `GET /api/members`, `DELETE /api/members/{userId}` (admin/owner), `PATCH /api/members/{userId}` (owner only)
 - `POST /api/upload` — multipart file upload
-- `POST /api/keys/upload`, `GET /api/keys/query?userId=`, `POST /api/keys/claim`
 
 **WebSocket:** `GET /api/ws?token=<jwt>` — outside the `/api` route group, registered directly on the root router
 
@@ -188,19 +222,25 @@ No content:   HTTP 204 with empty body
 
 React 19 + Vite 6 + Tailwind CSS v4. Discord-like three-column layout.
 
-### Multi-Instance State (Core Concept)
-The client connects to multiple OpenCord instances simultaneously. Each instance has independent auth.
+### Auth & Multi-Instance State (Core Concept)
+The client has a single global auth session with the central auth server. It connects to multiple instances using the same JWT.
 
-**Zustand store** (`src/stores/instance-store.ts`):
+**Auth store** (`src/stores/auth-store.ts`):
+- State: `authServerUrl`, `user`, `accessToken`, `refreshToken`
+- Persisted to localStorage as `opencord-auth`.
+- Single global session — not per-instance.
+
+**Instance store** (`src/stores/instance-store.ts`):
 - State: `instances: Map<string, InstanceState>` + `activeInstanceUrl: string | null`
-- `InstanceState` holds: `url`, `info` (InstanceInfo), `user`, `accessToken`, `refreshToken`, `connection` (InstanceConnection object)
-- Persisted to localStorage via Zustand `persist` middleware. The `partialize` function excludes live `connection` objects. The `merge` function reconstitutes `Map` from serialized plain objects and sets `connection: null`.
-- On app load, `useInitConnections()` hook iterates stored instances, creates `InstanceConnection` objects for any with valid tokens, and calls `connectWS()`.
+- `InstanceState` holds: `url`, `info` (InstanceInfo), `connection` (InstanceConnection object). No per-instance auth.
+- Persisted to localStorage via Zustand `persist` middleware. The `partialize` function excludes live `connection` objects.
+- On app load, `useInitConnections()` hook iterates stored instances, creates `InstanceConnection` objects with the central auth token, and calls `connectWS()`.
 
 **`@opencord/api-client` package** (`packages/api-client/`):
-- `HttpClient` — Fetch wrapper. Automatically adds `Authorization: Bearer` header. On 401, attempts token refresh via `POST /api/auth/refresh`, retries the original request, and calls `onTokenRefreshed` callback.
-- `InstanceConnection` — Manages one instance. Wraps `HttpClient` for REST and handles WebSocket with auto-reconnect (3s interval, max 10 attempts). Methods map 1:1 to REST endpoints. WS event handlers registered via `onWSEvent(handler)` which returns an unsubscribe function.
-- `ConnectionManager` — Manages multiple `InstanceConnection` objects. Persists to localStorage under key `opencord_instances`. (Note: the web app uses Zustand store directly instead of ConnectionManager.)
+- `AuthClient` — Manages central auth. Methods: `register()`, `login()`, `refresh()`, `logout()`, `getMe()`, `updateMe()`.
+- `HttpClient` — Fetch wrapper. Automatically adds `Authorization: Bearer` header. On 401, calls `onAuthFailure` callback (returns new access token or null).
+- `InstanceConnection` — Manages one instance. Takes `accessToken` from caller (central auth provides it). No auth methods. Methods map 1:1 to instance REST endpoints. WS event handlers registered via `onWSEvent(handler)`.
+- `ConnectionManager` — Manages multiple `InstanceConnection` objects. (Note: the web app uses Zustand store directly instead.)
 
 ### React Query Integration
 - Query keys always scoped by instance URL: `[instanceUrl, 'channels']`, `[instanceUrl, 'messages', channelId]`, `[instanceUrl, 'members']`
@@ -209,7 +249,7 @@ The client connects to multiple OpenCord instances simultaneously. Each instance
 - Default `staleTime: 30000` (30s), `retry: 1`.
 
 ### Routing
-React Router v7. Routes: `/add-instance`, `/login` (redirects to add-instance), `/register` (redirects to add-instance), `/instance/:encodedUrl/channel/:channelId`. The `encodedUrl` is `encodeURIComponent(instanceUrl)`.
+React Router v7. Routes: `/auth` (central login/register), `/add-instance` (URL + invite code), `/instance/:encodedUrl/channel/:channelId`. The `encodedUrl` is `encodeURIComponent(instanceUrl)`. `RequireAuth` wrapper redirects to `/auth` if no central session.
 
 ### Vite Config
 - Path aliases: `@/` → `src/`, `@opencord/*` → `../../packages/*/src`
@@ -223,7 +263,8 @@ React Router v7. Routes: `/add-instance`, `/login` (redirects to add-instance), 
 - `MessageList` — Reverses messages (API returns newest-first), groups consecutive messages from same author within 5 minutes, auto-scrolls to bottom on new messages.
 - `MessageInput` — Form with Enter to submit. Typing indicator throttled to one event per 3 seconds.
 - `MemberSidebar` — Groups members by role (owner, admin, member) with avatars.
-- `AddInstancePage` — Two-step flow: (1) enter URL, fetch instance info (2) login or register form.
+- `AuthPage` — Central auth login/register page. Shown when no central auth session exists.
+- `AddInstancePage` — Two-step flow: (1) enter URL, fetch instance info, verify auth server matches (2) enter invite code to join.
 
 ### Tauri Desktop
 Config at `apps/web/src-tauri/tauri.conf.json`. Same Vite app wrapped as native desktop. Dev URL: `http://localhost:3000`. Default window: 1200x800, min 800x600.
@@ -242,11 +283,6 @@ React components styled with Tailwind CSS classes (dark theme):
 - `Input` — With optional label and error message. Uses `forwardRef`. Dark gray background.
 - `Spinner` — Animated SVG. Sizes: sm, md, lg.
 
-### `@opencord/crypto` (`packages/crypto/`)
-Stub implementation for E2EE. `OlmMachine` class with passthrough encrypt/decrypt (not actually encrypting in stub). Methods: `init()`, `getDeviceId()`, `getIdentityKeys()`, `generateOneTimeKeys(count)`, `encryptMessage(channelId, plaintext)`, `decryptMessage(channelId, senderId, ciphertext)`, `createOutboundSession()`, `exportKeys()`, `importKeys()`. Full implementation will use vodozemac compiled to WASM.
-
-`getOrCreateDeviceId()` utility persists device ID to localStorage under key `opencord_device_id`.
-
 ## Mobile App (`apps/mobile/`)
 
 Expo React Native with NativeWind (Tailwind for RN). Uses Expo Router (file-based routing in `app/` directory).
@@ -258,12 +294,15 @@ Uses same `@opencord/api-client` and `@opencord/shared` packages as web.
 ## Docker Setup
 
 ### Services (docker-compose.yml)
-- `postgres` — PostgreSQL 16 Alpine, port 5432, healthcheck via `pg_isready`, persistent volume
+- `postgres` — PostgreSQL 16 Alpine, port 5432, instance database
+- `postgres-auth` — PostgreSQL 16 Alpine, port 5433, central auth database
 - `redis` — Redis 7 Alpine, port 6379, healthcheck via `redis-cli ping`, persistent volume
-- `api` — Go binary, port 8080, depends on healthy postgres+redis, upload volume at `/app/uploads`
+- `auth` — Central auth Go binary, port 9090, depends on healthy postgres-auth, ES256 key volume at `/app/keys`
+- `api` — Instance Go binary, port 8080, depends on healthy postgres+redis+auth, upload volume at `/app/uploads`
 - `web` — Nginx serving Vite build output, port 3000→80, depends on api
 
 ### Dockerfiles
+- `docker/Dockerfile.auth` — Multi-stage: `golang:1.22-alpine` builder → `alpine:3.19` runtime. Copies migrations and creates keys dir.
 - `docker/Dockerfile.api` — Multi-stage: `golang:1.22-alpine` builder → `alpine:3.19` runtime. Copies migrations alongside binary.
 - `docker/Dockerfile.web` — Multi-stage: `node:22-alpine` builder (runs `npx nx run web:build`) → `nginx:alpine` runtime.
 
@@ -307,25 +346,38 @@ Every handler follows this exact pattern:
 
 ## Environment Variables
 
+### Central Auth Server (`apps/auth/`)
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable` | PostgreSQL connection string |
+| `DATABASE_URL` | `postgres://opencord:opencord@localhost:5432/opencord_auth?sslmode=disable` | Auth database connection |
+| `PORT` | `9090` | Auth server port |
+| `KEY_DIR` | `./keys` | ES256 key pair directory (PEM files) |
+| `ISSUER` | `http://localhost:9090` | JWT `iss` claim |
+
+### Instance API (`apps/api/`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable` | Instance database connection |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
-| `JWT_SECRET` | `dev-secret-change-me` | HMAC secret for JWT signing |
+| `AUTH_SERVER_URL` | `http://localhost:9090` | Central auth server URL (for JWKS) |
 | `UPLOAD_PATH` | `./uploads` | Directory for uploaded files |
 | `INSTANCE_NAME` | `My OpenCord` | Display name in instance info |
 | `INSTANCE_URL` | `http://localhost:<PORT>` | Base URL for upload URLs |
 | `PORT` | `8080` | API server port |
 
-See `.env.example` for a copy-paste template.
+### Web Frontend
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_AUTH_SERVER_URL` | `http://localhost:9090` | Central auth server URL |
 
 ## Key Design Decisions
 
-1. **One instance = one server.** No multi-server backend. The client manages multiple independent instance connections. Like email accounts — you're a different user on each instance.
-2. **No shared `writeJSON`/`writeError`.** Each handler package defines its own helpers. This avoids a shared `utils` package and keeps packages self-contained.
-3. **No service layer for most domains.** Only `auth` has a service. Other handlers call repositories directly. Add services when business logic grows beyond simple CRUD.
-4. **WebSocket auth via query param.** The WebSocket API doesn't support custom headers during handshake, so JWT is passed as `?token=`. The WS endpoint is registered outside the auth middleware group.
-5. **React Query invalidation over direct cache mutation.** WS events trigger `invalidateQueries()` to refetch, rather than surgically patching cache. Simpler, more correct, slightly more network usage.
-6. **E2EE is stubbed.** The `@opencord/crypto` package passes through plaintext. Full vodozemac WASM integration is pending. The server-side key management endpoints are fully implemented.
-7. **JWT with refresh token rotation.** On refresh, old token is deleted. This limits the window for stolen refresh tokens.
-8. **Connection pool:** `database.Connect()` sets `MaxOpenConns=25`, `MaxIdleConns=5`.
+1. **Central auth with ES256 JWTs.** Asymmetric signing so instances validate without a shared secret. The auth server signs, instances verify via JWKS public key.
+2. **Profile data in JWT claims.** Instances get username/avatar without extra HTTP calls to the auth server (15min staleness acceptable).
+3. **Instance `users` table is a cache.** Upserted from JWT claims on every authenticated request. Used for JOINs in message/member queries.
+4. **No shared `writeJSON`/`writeError`.** Each handler package defines its own helpers. This avoids a shared `utils` package and keeps packages self-contained.
+5. **No service layer for most domains.** Only auth packages have services. Other handlers call repositories directly.
+6. **WebSocket auth via query param.** The WebSocket API doesn't support custom headers during handshake, so JWT is passed as `?token=`.
+7. **React Query invalidation over direct cache mutation.** WS events trigger `invalidateQueries()` to refetch, rather than surgically patching cache.
+8. **JWT with refresh token rotation.** On refresh, old token is deleted. This limits the window for stolen refresh tokens.
+9. **Connection pool:** `database.Connect()` sets `MaxOpenConns=25`, `MaxIdleConns=5`.

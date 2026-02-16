@@ -60,22 +60,3 @@ CREATE TABLE instance_settings (
     registration_open BOOLEAN NOT NULL DEFAULT true
 );
 INSERT INTO instance_settings (name) VALUES ('OpenCord');
-
-CREATE TABLE device_keys (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_id VARCHAR(64) NOT NULL,
-    identity_key TEXT NOT NULL,
-    signing_key TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, device_id)
-);
-
-CREATE TABLE one_time_keys (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_id VARCHAR(64) NOT NULL,
-    key_id VARCHAR(64) NOT NULL,
-    key TEXT NOT NULL,
-    claimed BOOLEAN NOT NULL DEFAULT false
-);
-CREATE INDEX idx_otk_user_device ON one_time_keys(user_id, device_id, claimed);

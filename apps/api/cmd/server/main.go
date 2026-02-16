@@ -15,7 +15,6 @@ import (
 	"github.com/opencord/api/internal/database"
 	"github.com/opencord/api/internal/instance"
 	"github.com/opencord/api/internal/invite"
-	"github.com/opencord/api/internal/keys"
 	"github.com/opencord/api/internal/member"
 	"github.com/opencord/api/internal/message"
 	"github.com/opencord/api/internal/upload"
@@ -26,7 +25,7 @@ import (
 func main() {
 	// Config from env
 	databaseURL := getEnv("DATABASE_URL", "postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable")
-	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-me")
+	authServerURL := getEnv("AUTH_SERVER_URL", "http://localhost:9090")
 	port := getEnv("PORT", "8080")
 	uploadPath := getEnv("UPLOAD_PATH", "./uploads")
 	instanceURL := getEnv("INSTANCE_URL", "http://localhost:"+port)
@@ -43,25 +42,34 @@ func main() {
 		log.Printf("migration warning: %v", err)
 	}
 
+	// Seed auth_server_url in instance_settings
+	_, _ = db.Exec(`UPDATE instance_settings SET auth_server_url = $1 WHERE id = 1`, authServerURL)
+
+	// JWKS client — fetch public keys from central auth
+	jwksClient, err := auth.NewJWKSClient(authServerURL)
+	if err != nil {
+		log.Fatalf("failed to initialize JWKS client: %v", err)
+	}
+	jwksClient.StartRefreshLoop()
+	defer jwksClient.Stop()
+
 	// Repositories
-	authRepo := auth.NewPostgresRepository(db)
 	userRepo := user.NewPostgresRepository(db)
 	channelRepo := channel.NewPostgresRepository(db)
 	messageRepo := message.NewPostgresRepository(db)
 	memberRepo := member.NewPostgresRepository(db)
 	inviteRepo := invite.NewPostgresRepository(db)
 	instanceRepo := instance.NewPostgresRepository(db)
-	keysRepo := keys.NewPostgresRepository(db)
 
 	// Services
-	authService := auth.NewService(authRepo, jwtSecret)
+	authService := auth.NewService(jwksClient)
 
 	// WebSocket hub
 	hub := ws.NewHub()
 	go hub.Run()
 
 	// Handlers
-	authHandler := auth.NewHandler(authService)
+	authHandler := auth.NewHandler(authService, userRepo)
 	userHandler := user.NewHandler(userRepo)
 	channelHandler := channel.NewHandler(channelRepo)
 	messageHandler := message.NewHandler(messageRepo, hub)
@@ -69,7 +77,6 @@ func main() {
 	inviteHandler := invite.NewHandler(inviteRepo, memberRepo)
 	instanceHandler := instance.NewHandler(instanceRepo)
 	uploadHandler := upload.NewHandler(uploadPath, instanceURL)
-	keysHandler := keys.NewHandler(keysRepo)
 
 	// Router
 	r := chi.NewRouter()
@@ -95,20 +102,11 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/instance", instanceHandler.GetInfo)
 
-		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
-			r.Post("/refresh", authHandler.Refresh)
-		})
-
-		// Authenticated routes
+		// Authenticated routes — JWT validated via central auth JWKS
 		r.Group(func(r chi.Router) {
 			r.Use(authHandler.Middleware)
 
-			r.Delete("/auth/logout", authHandler.Logout)
-
 			r.Get("/users/me", userHandler.GetMe)
-			r.Patch("/users/me", userHandler.UpdateMe)
 
 			r.Post("/channels", channelHandler.Create)
 			r.Get("/channels", channelHandler.List)
@@ -130,23 +128,21 @@ func main() {
 			r.Patch("/members/{userId}", memberHandler.UpdateRole)
 
 			r.Post("/upload", uploadHandler.Upload)
-
-			r.Post("/keys/upload", keysHandler.Upload)
-			r.Get("/keys/query", keysHandler.Query)
-			r.Post("/keys/claim", keysHandler.Claim)
 		})
 	})
 
-	// WebSocket (auth via query param)
+	// WebSocket (auth via query param, validated via central auth JWKS)
 	r.Get("/api/ws", ws.HandleWebSocket(hub, func(token string) (uuid.UUID, error) {
 		claims, err := authService.ValidateAccessToken(token)
 		if err != nil {
 			return uuid.UUID{}, err
 		}
+		// Upsert user cache for WS connections too
+		_ = userRepo.UpsertFromClaims(claims)
 		return claims.UserID, nil
 	}))
 
-	log.Printf("OpenCord API starting on :%s", port)
+	log.Printf("OpenCord API starting on :%s (auth: %s)", port, authServerURL)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

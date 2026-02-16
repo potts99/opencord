@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS one_time_keys;
-DROP TABLE IF EXISTS device_keys;
 DROP TABLE IF EXISTS instance_settings;
 DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS invites;

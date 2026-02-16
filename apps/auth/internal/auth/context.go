@@ -14,12 +14,3 @@ func UserFromContext(ctx context.Context) (uuid.UUID, bool) {
 	userID, ok := ctx.Value(UserContextKey).(uuid.UUID)
 	return userID, ok
 }
-
-func SetClaimsContext(ctx context.Context, claims *TokenClaims) context.Context {
-	return context.WithValue(ctx, ClaimsContextKey, claims)
-}
-
-func ClaimsFromContext(ctx context.Context) (*TokenClaims, bool) {
-	claims, ok := ctx.Value(ClaimsContextKey).(*TokenClaims)
-	return claims, ok
-}

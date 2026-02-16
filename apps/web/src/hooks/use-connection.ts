@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'react';
-import { InstanceConnection } from '@opencord/api-client';
+import { InstanceConnection, AuthClient } from '@opencord/api-client';
 import { useInstanceStore } from '@/stores/instance-store';
+import { useAuthStore } from '@/stores/auth-store';
 
 export function useActiveConnection(): InstanceConnection | null {
   const activeUrl = useInstanceStore((s) => s.activeInstanceUrl);
@@ -15,25 +16,39 @@ export function useActiveConnection(): InstanceConnection | null {
 export function useInitConnections() {
   const instances = useInstanceStore((s) => s.instances);
   const setInstanceConnection = useInstanceStore((s) => s.setInstanceConnection);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const authServerUrl = useAuthStore((s) => s.authServerUrl);
+  const setTokens = useAuthStore((s) => s.setTokens);
 
   useEffect(() => {
+    if (!accessToken) return;
+
     for (const [url, state] of instances) {
-      if (state.accessToken && !state.connection) {
+      if (!state.connection) {
         const conn = new InstanceConnection(url, {
-          accessToken: state.accessToken,
-          refreshToken: state.refreshToken ?? undefined,
-          onTokenRefreshed: (accessToken, refreshToken) => {
-            useInstanceStore.getState().setInstanceAuth(
-              url,
-              state.user!,
-              accessToken,
-              refreshToken
-            );
+          accessToken,
+          onAuthFailure: async () => {
+            // Refresh with central auth server
+            if (!authServerUrl || !refreshToken) return null;
+            try {
+              const authClient = new AuthClient(authServerUrl, {
+                accessToken,
+                refreshToken,
+                onTokenRefreshed: (newAccess, newRefresh) => {
+                  setTokens(newAccess, newRefresh);
+                },
+              });
+              const resp = await authClient.refresh();
+              return resp.accessToken;
+            } catch {
+              return null;
+            }
           },
         });
         conn.connectWS();
         setInstanceConnection(url, conn);
       }
     }
-  }, [instances, setInstanceConnection]);
+  }, [instances, setInstanceConnection, accessToken, refreshToken, authServerUrl, setTokens]);
 }
