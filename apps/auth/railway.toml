@@ -1,11 +1,8 @@
 [build]
-builder = "nixpacks"
-
-[build.nixpacks]
-providers = ["go"]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "./server"
 healthcheckPath = "/.well-known/jwks.json"
 healthcheckTimeout = 10
 restartPolicyType = "on_failure"
