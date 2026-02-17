@@ -3,32 +3,42 @@
 ## Phase 1: Project Scaffold
 - [x] Init Nx workspace with package.json, nx.json, tsconfig.base.json
 - [x] Create CLAUDE.md with architecture docs and conventions
-- [x] Create .gitignore, .env.example
+- [x] Create .gitignore, .env.example (per-app)
 - [x] Scaffold directory structure for all apps and packages
 - [x] Set up Go module with dependencies (go.mod, go.sum)
-- [x] Set up shared packages (shared, api-client, ui, crypto)
-- [x] Docker Compose with Postgres + Redis + API + Web
+- [x] Set up shared packages (shared, api-client, ui)
+- [x] Docker Compose with Postgres + Redis + Auth + API + Web
 - [x] Dockerfiles (multi-stage Go build, Vite + Nginx)
 - [x] Nginx config with SPA fallback + API/WS proxy
 
-## Phase 2: Auth + Instance Info
-- [x] Database migration: users, refresh_tokens, instance_settings tables
-- [x] `GET /api/instance` public endpoint (instance name, icon, registration status)
-- [x] `POST /api/auth/register` — email/username/password registration
-- [x] `POST /api/auth/login` — email/password login
-- [x] `POST /api/auth/refresh` — JWT refresh token rotation
-- [x] `DELETE /api/auth/logout` — invalidate refresh token
-- [x] JWT access tokens (15min HS256) + refresh tokens (30-day, hashed)
-- [x] Password hashing with bcrypt
-- [x] Auth middleware (Bearer token → user UUID in context)
-- [x] `GET /api/users/me`, `PATCH /api/users/me`
-- [x] Login/register screens (web) — AddInstancePage with two-step flow
-- [x] "Add Instance" flow (enter URL → fetch info → register/login)
-- [x] Zustand store for multi-instance state with localStorage persistence
+## Phase 2: Central Auth + Instance Info
+- [x] Central auth server (`apps/auth/`) with ES256 JWT signing
+- [x] Auth database migration: users, refresh_tokens tables
+- [x] `POST /api/auth/register` — email/username/password registration (central auth)
+- [x] `POST /api/auth/login` — email/password login (central auth)
+- [x] `POST /api/auth/refresh` — JWT refresh token rotation (central auth)
+- [x] `DELETE /api/auth/logout` — invalidate refresh token (central auth)
+- [x] ES256 key pair management with auto-generation and JWKS endpoint
+- [x] `GET /.well-known/jwks.json` — public key distribution
+- [x] `GET /api/users/me`, `PATCH /api/users/me` (central auth)
+- [x] Password hashing with bcrypt (central auth)
+- [x] Instance JWKS client — fetches public keys, validates JWTs locally
+- [x] Instance auth middleware — validates ES256 JWT, upserts user cache
+- [x] Instance database migration: users (cache), channels, members, invites, messages, instance_settings
+- [x] `GET /api/instance` public endpoint (name, icon, description, registration status, authServerUrl)
+- [x] Central auth deployed to Railway with PlanetScale PostgreSQL
+- [x] `AuthClient` class in api-client package
+- [x] Central auth login/register page (`apps/web/src/pages/auth.tsx`)
+- [x] Global auth store (Zustand, persisted to localStorage)
+- [x] Updated "Add Instance" flow (URL → verify authServerUrl → invite code → join)
+- [x] Instance connections use central JWT (shared across all instances)
+- [x] `onAuthFailure` callback for token refresh via central auth
+- [x] Instance setup documentation (`docs/setup-instance.md`)
 - [ ] Input validation on registration (email format, password length, username rules)
 - [ ] Error messages for duplicate email/username on register
 - [ ] "Forgot password" flow (email-based reset)
-- [ ] Auto-create first user as instance owner on registration (when no members exist)
+- [ ] Auto-create first user as instance owner (when no members exist on join)
+- [ ] End-to-end testing: register → add instance → join → chat
 
 ## Phase 3: Channels & Members
 - [x] Database migration: channels, members, invites tables
@@ -57,7 +67,7 @@
 - [x] Message ownership enforcement (edit/delete own messages only)
 - [x] WebSocket hub with per-channel subscriptions
 - [x] WebSocket client with read/write pump goroutines
-- [x] WebSocket auth via query param token
+- [x] WebSocket auth via query param token (validated via JWKS)
 - [x] Real-time broadcast: message_create, message_update, message_delete events
 - [x] Chat UI with message list + input
 - [x] Message grouping (same author within 5 minutes)
@@ -166,12 +176,12 @@
 | Phase | Done | Remaining | Status |
 |-------|------|-----------|--------|
 | 1. Scaffold | 9/9 | 0 | Complete |
-| 2. Auth + Instance | 12/16 | 4 | Core done |
+| 2. Central Auth + Instance | 21/26 | 5 | Core done, deployed |
 | 3. Channels & Members | 12/19 | 7 | Core done |
-| 4. Messaging | 13/24 | 11 | Core done |
+| 4. Messaging | 13/23 | 10 | Core done |
 | 5. Image Uploads | 5/13 | 8 | Backend done |
-| 6. Presence & Typing | 2/13 | 11 | Events only |
+| 6. Presence & Typing | 2/11 | 9 | Events only |
 | 7. Voice Channels | 3/15 | 12 | Signaling only |
 | 8. Desktop & Mobile | 3/16 | 13 | Scaffolded |
 | 9. Polish | 0/20 | 20 | Not started |
-| **Total** | **59/145** | **86** | **41% complete** |
+| **Total** | **68/152** | **84** | **45% complete** |

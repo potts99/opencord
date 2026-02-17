@@ -1,12 +1,12 @@
 {
   "project": "OpenCord",
-  "version": "0.1.0",
-  "lastUpdated": "2026-02-16",
+  "version": "0.2.0",
+  "lastUpdated": "2026-02-17",
   "summary": {
-    "totalFeatures": 145,
-    "completed": 59,
-    "remaining": 86,
-    "percentComplete": 41
+    "totalFeatures": 152,
+    "completed": 68,
+    "remaining": 84,
+    "percentComplete": 45
   },
   "phases": [
     {
@@ -18,38 +18,48 @@
       "features": [
         { "id": "1.1", "name": "Init Nx workspace", "status": "done", "files": ["package.json", "nx.json", "tsconfig.base.json"] },
         { "id": "1.2", "name": "Create CLAUDE.md", "status": "done", "files": ["CLAUDE.md"] },
-        { "id": "1.3", "name": "Create .gitignore and .env.example", "status": "done", "files": [".gitignore", ".env.example"] },
+        { "id": "1.3", "name": "Create .gitignore and .env.example (per-app)", "status": "done", "files": [".gitignore", "apps/auth/.env.example", "apps/api/.env.example", "apps/web/.env.example"] },
         { "id": "1.4", "name": "Scaffold directory structure", "status": "done" },
         { "id": "1.5", "name": "Set up Go module", "status": "done", "files": ["apps/api/go.mod", "apps/api/go.sum"] },
         { "id": "1.6", "name": "Set up shared packages", "status": "done", "files": ["packages/shared/", "packages/api-client/", "packages/ui/"] },
         { "id": "1.7", "name": "Docker Compose config", "status": "done", "files": ["docker-compose.yml"] },
-        { "id": "1.8", "name": "Dockerfiles", "status": "done", "files": ["docker/Dockerfile.api", "docker/Dockerfile.web"] },
+        { "id": "1.8", "name": "Dockerfiles", "status": "done", "files": ["docker/Dockerfile.api", "docker/Dockerfile.web", "docker/Dockerfile.auth"] },
         { "id": "1.9", "name": "Nginx config", "status": "done", "files": ["docker/nginx.conf"] }
       ]
     },
     {
       "id": 2,
-      "name": "Auth + Instance Info",
+      "name": "Central Auth + Instance Info",
       "status": "in_progress",
-      "completed": 12,
-      "total": 16,
+      "completed": 21,
+      "total": 26,
       "features": [
-        { "id": "2.1", "name": "Database migration for users, refresh_tokens, instance_settings", "status": "done", "files": ["apps/api/migrations/000001_init.up.sql"] },
-        { "id": "2.2", "name": "GET /api/instance endpoint", "status": "done", "files": ["apps/api/internal/instance/"] },
-        { "id": "2.3", "name": "POST /api/auth/register", "status": "done", "files": ["apps/api/internal/auth/handler.go"] },
-        { "id": "2.4", "name": "POST /api/auth/login", "status": "done", "files": ["apps/api/internal/auth/handler.go"] },
-        { "id": "2.5", "name": "POST /api/auth/refresh", "status": "done", "files": ["apps/api/internal/auth/handler.go"] },
-        { "id": "2.6", "name": "DELETE /api/auth/logout", "status": "done", "files": ["apps/api/internal/auth/handler.go"] },
-        { "id": "2.7", "name": "JWT access + refresh token generation", "status": "done", "files": ["apps/api/internal/auth/service.go"] },
-        { "id": "2.8", "name": "bcrypt password hashing", "status": "done", "files": ["apps/api/internal/auth/service.go"] },
-        { "id": "2.9", "name": "Auth middleware", "status": "done", "files": ["apps/api/internal/auth/handler.go", "apps/api/internal/auth/context.go"] },
-        { "id": "2.10", "name": "User profile endpoints", "status": "done", "files": ["apps/api/internal/user/"] },
-        { "id": "2.11", "name": "Login/register UI (AddInstancePage)", "status": "done", "files": ["apps/web/src/pages/add-instance.tsx"] },
-        { "id": "2.12", "name": "Zustand multi-instance store", "status": "done", "files": ["apps/web/src/stores/instance-store.ts"] },
-        { "id": "2.13", "name": "Input validation on registration", "status": "todo", "priority": "medium" },
-        { "id": "2.14", "name": "Duplicate email/username error handling", "status": "todo", "priority": "medium" },
-        { "id": "2.15", "name": "Forgot password flow", "status": "todo", "priority": "low" },
-        { "id": "2.16", "name": "Auto-create first user as owner", "status": "todo", "priority": "high" }
+        { "id": "2.1", "name": "Central auth server (apps/auth/) with ES256 JWT signing", "status": "done", "files": ["apps/auth/cmd/server/main.go", "apps/auth/internal/auth/"] },
+        { "id": "2.2", "name": "Auth database migration: users, refresh_tokens", "status": "done", "files": ["apps/auth/migrations/000001_init.up.sql"] },
+        { "id": "2.3", "name": "POST /api/auth/register (central auth)", "status": "done", "files": ["apps/auth/internal/auth/handler.go"] },
+        { "id": "2.4", "name": "POST /api/auth/login (central auth)", "status": "done", "files": ["apps/auth/internal/auth/handler.go"] },
+        { "id": "2.5", "name": "POST /api/auth/refresh (central auth)", "status": "done", "files": ["apps/auth/internal/auth/handler.go"] },
+        { "id": "2.6", "name": "DELETE /api/auth/logout (central auth)", "status": "done", "files": ["apps/auth/internal/auth/handler.go"] },
+        { "id": "2.7", "name": "ES256 key pair management with JWKS endpoint", "status": "done", "files": ["apps/auth/internal/auth/jwks.go"] },
+        { "id": "2.8", "name": "GET /.well-known/jwks.json", "status": "done", "files": ["apps/auth/internal/auth/jwks.go"] },
+        { "id": "2.9", "name": "GET /api/users/me, PATCH /api/users/me (central auth)", "status": "done", "files": ["apps/auth/internal/auth/handler.go"] },
+        { "id": "2.10", "name": "bcrypt password hashing (central auth)", "status": "done", "files": ["apps/auth/internal/auth/service.go"] },
+        { "id": "2.11", "name": "Instance JWKS client — fetches public keys, validates JWTs locally", "status": "done", "files": ["apps/api/internal/auth/jwks_client.go"] },
+        { "id": "2.12", "name": "Instance auth middleware — validates ES256 JWT, upserts user cache", "status": "done", "files": ["apps/api/internal/auth/handler.go", "apps/api/internal/auth/service.go"] },
+        { "id": "2.13", "name": "Instance database migration", "status": "done", "files": ["apps/api/migrations/000001_init.up.sql"] },
+        { "id": "2.14", "name": "GET /api/instance (with authServerUrl)", "status": "done", "files": ["apps/api/internal/instance/"] },
+        { "id": "2.15", "name": "Central auth deployed to Railway", "status": "done" },
+        { "id": "2.16", "name": "AuthClient class in api-client package", "status": "done", "files": ["packages/api-client/src/auth-client.ts"] },
+        { "id": "2.17", "name": "Central auth login/register page", "status": "done", "files": ["apps/web/src/pages/auth.tsx"] },
+        { "id": "2.18", "name": "Global auth store (Zustand)", "status": "done", "files": ["apps/web/src/stores/auth-store.ts"] },
+        { "id": "2.19", "name": "Updated Add Instance flow (URL → verify → invite → join)", "status": "done", "files": ["apps/web/src/pages/add-instance.tsx"] },
+        { "id": "2.20", "name": "Instance connections use central JWT", "status": "done", "files": ["apps/web/src/hooks/use-connection.ts"] },
+        { "id": "2.21", "name": "Instance setup documentation", "status": "done", "files": ["docs/setup-instance.md"] },
+        { "id": "2.22", "name": "Input validation on registration", "status": "todo", "priority": "medium" },
+        { "id": "2.23", "name": "Duplicate email/username error handling", "status": "todo", "priority": "medium" },
+        { "id": "2.24", "name": "Forgot password flow", "status": "todo", "priority": "low" },
+        { "id": "2.25", "name": "Auto-create first user as instance owner on join", "status": "todo", "priority": "high" },
+        { "id": "2.26", "name": "End-to-end testing: register → add instance → join → chat", "status": "todo", "priority": "high" }
       ]
     },
     {
@@ -85,14 +95,14 @@
       "name": "Real-Time Messaging",
       "status": "in_progress",
       "completed": 13,
-      "total": 24,
+      "total": 23,
       "features": [
         { "id": "4.1", "name": "Messages table with pagination index", "status": "done" },
         { "id": "4.2", "name": "Message CRUD endpoints", "status": "done", "files": ["apps/api/internal/message/"] },
         { "id": "4.3", "name": "Message ownership enforcement", "status": "done" },
         { "id": "4.4", "name": "WebSocket hub with channel subscriptions", "status": "done", "files": ["apps/api/internal/ws/hub.go"] },
         { "id": "4.5", "name": "WebSocket client read/write pumps", "status": "done", "files": ["apps/api/internal/ws/client.go"] },
-        { "id": "4.6", "name": "WebSocket auth via query param", "status": "done", "files": ["apps/api/internal/ws/handler.go"] },
+        { "id": "4.6", "name": "WebSocket auth via query param (JWKS validated)", "status": "done", "files": ["apps/api/internal/ws/handler.go"] },
         { "id": "4.7", "name": "Real-time broadcast events", "status": "done" },
         { "id": "4.8", "name": "Message list + input UI", "status": "done", "files": ["apps/web/src/components/message-list.tsx", "apps/web/src/components/message-input.tsx"] },
         { "id": "4.9", "name": "Message grouping (same author, 5min window)", "status": "done" },
@@ -109,8 +119,7 @@
         { "id": "4.20", "name": "Link previews / URL embeds", "status": "todo", "priority": "low" },
         { "id": "4.21", "name": "Markdown rendering", "status": "todo", "priority": "medium" },
         { "id": "4.22", "name": "Relative timestamps", "status": "todo", "priority": "medium" },
-        { "id": "4.23", "name": "New messages divider", "status": "todo", "priority": "medium" },
-        { "id": "4.24", "name": "Message reactions/emoji", "status": "todo", "priority": "low" }
+        { "id": "4.23", "name": "New messages divider", "status": "todo", "priority": "medium" }
       ]
     },
     {
@@ -140,7 +149,7 @@
       "name": "Presence & Typing",
       "status": "in_progress",
       "completed": 2,
-      "total": 13,
+      "total": 11,
       "features": [
         { "id": "6.1", "name": "Typing indicator WS event", "status": "done" },
         { "id": "6.2", "name": "Client-side typing throttle (3s)", "status": "done" },
@@ -152,9 +161,7 @@
         { "id": "6.8", "name": "Online/offline dot on avatars", "status": "todo", "priority": "high" },
         { "id": "6.9", "name": "Idle status detection", "status": "todo", "priority": "low" },
         { "id": "6.10", "name": "Custom status messages", "status": "todo", "priority": "low" },
-        { "id": "6.11", "name": "Last seen timestamp", "status": "todo", "priority": "low" },
-        { "id": "6.12", "name": "presence_update WS event broadcast", "status": "todo", "priority": "high" },
-        { "id": "6.13", "name": "Presence on member sidebar", "status": "todo", "priority": "high" }
+        { "id": "6.11", "name": "Last seen timestamp", "status": "todo", "priority": "low" }
       ]
     },
     {
