@@ -25,5 +25,6 @@ COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 ENV API_URL=http://api:8080
+ENV NGINX_ENVSUBST_FILTER=API_URL
 
 EXPOSE 80
