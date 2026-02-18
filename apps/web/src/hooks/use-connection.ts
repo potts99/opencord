@@ -16,27 +16,45 @@ export function useActiveConnection(): InstanceConnection | null {
 export function useInitConnections() {
   const instances = useInstanceStore((s) => s.instances);
   const setInstanceConnection = useInstanceStore((s) => s.setInstanceConnection);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const setInstanceAuth = useInstanceStore((s) => s.setInstanceAuth);
+  const centralAccessToken = useAuthStore((s) => s.accessToken);
+  const centralRefreshToken = useAuthStore((s) => s.refreshToken);
   const authServerUrl = useAuthStore((s) => s.authServerUrl);
-  const setTokens = useAuthStore((s) => s.setTokens);
+  const setCentralTokens = useAuthStore((s) => s.setTokens);
 
   useEffect(() => {
-    if (!accessToken) return;
-
     for (const [url, state] of instances) {
-      if (!state.connection) {
+      if (state.connection) continue;
+
+      const isLocalAuth = !state.info?.authServerUrl;
+
+      if (isLocalAuth) {
+        // Local auth: use per-instance tokens
+        if (!state.accessToken) continue;
+
         const conn = new InstanceConnection(url, {
-          accessToken,
+          accessToken: state.accessToken,
+          refreshToken: state.refreshToken ?? undefined,
+          onTokenRefreshed: (newAccess, newRefresh) => {
+            setInstanceAuth(url, state.user!, newAccess, newRefresh);
+          },
+        });
+        conn.connectWS();
+        setInstanceConnection(url, conn);
+      } else {
+        // Central auth: use global auth store tokens
+        if (!centralAccessToken) continue;
+
+        const conn = new InstanceConnection(url, {
+          accessToken: centralAccessToken,
           onAuthFailure: async () => {
-            // Refresh with central auth server
-            if (!authServerUrl || !refreshToken) return null;
+            if (!authServerUrl || !centralRefreshToken) return null;
             try {
               const authClient = new AuthClient(authServerUrl, {
-                accessToken,
-                refreshToken,
+                accessToken: centralAccessToken,
+                refreshToken: centralRefreshToken,
                 onTokenRefreshed: (newAccess, newRefresh) => {
-                  setTokens(newAccess, newRefresh);
+                  setCentralTokens(newAccess, newRefresh);
                 },
               });
               const resp = await authClient.refresh();
@@ -50,5 +68,5 @@ export function useInitConnections() {
         setInstanceConnection(url, conn);
       }
     }
-  }, [instances, setInstanceConnection, accessToken, refreshToken, authServerUrl, setTokens]);
+  }, [instances, setInstanceConnection, setInstanceAuth, centralAccessToken, centralRefreshToken, authServerUrl, setCentralTokens]);
 }

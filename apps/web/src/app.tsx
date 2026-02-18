@@ -15,6 +15,18 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireAnyAuth({ children }: { children: React.ReactNode }) {
+  const centralToken = useAuthStore((s) => s.accessToken);
+  const instances = useInstanceStore((s) => s.instances);
+
+  // User is authenticated if they have a central auth session OR any local-auth instance
+  const hasLocalAuth = Array.from(instances.values()).some((inst) => inst.accessToken);
+  if (!centralToken && !hasLocalAuth) {
+    return <Navigate to="/add-instance" replace />;
+  }
+  return <>{children}</>;
+}
+
 export function App() {
   const instances = useInstanceStore((s) => s.instances);
   const hasInstances = instances.size > 0;
@@ -22,20 +34,13 @@ export function App() {
   return (
     <Routes>
       <Route path="/auth" element={<AuthPage />} />
-      <Route
-        path="/add-instance"
-        element={
-          <RequireAuth>
-            <AddInstancePage />
-          </RequireAuth>
-        }
-      />
+      <Route path="/add-instance" element={<AddInstancePage />} />
       <Route
         path="/"
         element={
-          <RequireAuth>
+          <RequireAnyAuth>
             {hasInstances ? <Layout /> : <Navigate to="/add-instance" />}
-          </RequireAuth>
+          </RequireAnyAuth>
         }
       >
         <Route index element={<WelcomePage />} />

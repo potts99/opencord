@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS instance_settings;
+DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS invites;
 DROP TABLE IF EXISTS members;
 DROP TABLE IF EXISTS messages;

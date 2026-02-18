@@ -118,7 +118,7 @@ export interface InstanceInfo {
   description: string | null;
   version: string;
   registrationOpen: boolean;
-  authServerUrl: string;
+  authServerUrl: string | null;
 }
 
 // WebSocket Events

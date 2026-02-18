@@ -14,6 +14,9 @@ import type {
   User,
   WSEvent,
   ApiResponse,
+  AuthResponse,
+  RegisterRequest,
+  LoginRequest,
 } from '@opencord/shared';
 import { WS_RECONNECT_INTERVAL, WS_MAX_RECONNECT_ATTEMPTS } from '@opencord/shared';
 import { HttpClient } from './http-client';
@@ -34,7 +37,9 @@ export class InstanceConnection {
     url: string,
     options?: {
       accessToken?: string;
+      refreshToken?: string;
       onAuthFailure?: () => Promise<string | null>;
+      onTokenRefreshed?: (accessToken: string, refreshToken: string) => void;
     }
   ) {
     this.url = url.replace(/\/$/, '');
@@ -47,6 +52,50 @@ export class InstanceConnection {
 
   setAccessToken(token: string) {
     this.http.setAccessToken(token);
+  }
+
+  setTokens(accessToken: string, refreshToken: string) {
+    this.http.setTokens(accessToken, refreshToken);
+  }
+
+  // === Local Auth (only available on instances without central auth) ===
+
+  async register(req: RegisterRequest): Promise<AuthResponse> {
+    const res = await this.http.request<ApiResponse<AuthResponse>>('POST', '/api/auth/register', {
+      body: req,
+      auth: false,
+    });
+    this.http.setTokens(res.data.accessToken, res.data.refreshToken);
+    return res.data;
+  }
+
+  async login(req: LoginRequest): Promise<AuthResponse> {
+    const res = await this.http.request<ApiResponse<AuthResponse>>('POST', '/api/auth/login', {
+      body: req,
+      auth: false,
+    });
+    this.http.setTokens(res.data.accessToken, res.data.refreshToken);
+    return res.data;
+  }
+
+  async refresh(): Promise<AuthResponse> {
+    const refreshToken = this.http.getRefreshToken();
+    if (!refreshToken) throw new Error('No refresh token');
+    const res = await this.http.request<ApiResponse<AuthResponse>>('POST', '/api/auth/refresh', {
+      body: { refreshToken },
+      auth: false,
+    });
+    this.http.setTokens(res.data.accessToken, res.data.refreshToken);
+    return res.data;
+  }
+
+  async logout(): Promise<void> {
+    const refreshToken = this.http.getRefreshToken();
+    if (!refreshToken) return;
+    await this.http.request('DELETE', '/api/auth/logout', {
+      body: { refreshToken },
+    });
+    this.http.clearTokens();
   }
 
   // === Instance ===

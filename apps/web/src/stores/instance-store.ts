@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { InstanceInfo } from '@opencord/shared';
+import type { InstanceInfo, User } from '@opencord/shared';
 import { InstanceConnection } from '@opencord/api-client';
 
 export interface InstanceState {
   url: string;
   info: InstanceInfo | null;
+  user: User | null;           // for local-auth instances
+  accessToken: string | null;  // for local-auth instances
+  refreshToken: string | null; // for local-auth instances
   connection: InstanceConnection | null;
 }
 
@@ -17,6 +20,7 @@ interface InstanceStore {
   removeInstance: (url: string) => void;
   setActiveInstance: (url: string) => void;
   setInstanceConnection: (url: string, connection: InstanceConnection) => void;
+  setInstanceAuth: (url: string, user: User, accessToken: string, refreshToken: string) => void;
   getActiveConnection: () => InstanceConnection | null;
   getConnection: (url: string) => InstanceConnection | null;
 }
@@ -32,6 +36,9 @@ export const useInstanceStore = create<InstanceStore>()(
         instances.set(url, {
           url,
           info,
+          user: null,
+          accessToken: null,
+          refreshToken: null,
           connection: null,
         });
         set({
@@ -64,6 +71,15 @@ export const useInstanceStore = create<InstanceStore>()(
         }
       },
 
+      setInstanceAuth: (url, user, accessToken, refreshToken) => {
+        const instances = new Map(get().instances);
+        const existing = instances.get(url);
+        if (existing) {
+          instances.set(url, { ...existing, user, accessToken, refreshToken });
+          set({ instances });
+        }
+      },
+
       getActiveConnection: () => {
         const { activeInstanceUrl, instances } = get();
         if (!activeInstanceUrl) return null;
@@ -77,12 +93,15 @@ export const useInstanceStore = create<InstanceStore>()(
     {
       name: 'opencord-instances',
       partialize: (state) => {
-        // Don't persist connection objects
+        // Don't persist connection objects, but do persist auth state
         const serializable: Record<string, Omit<InstanceState, 'connection'>> = {};
         for (const [url, inst] of state.instances) {
           serializable[url] = {
             url: inst.url,
             info: inst.info,
+            user: inst.user,
+            accessToken: inst.accessToken,
+            refreshToken: inst.refreshToken,
           };
         }
         return {

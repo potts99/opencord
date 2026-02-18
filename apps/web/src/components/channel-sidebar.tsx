@@ -12,7 +12,9 @@ export function ChannelSidebar() {
   const activeInstance = useInstanceStore((s) =>
     s.activeInstanceUrl ? s.instances.get(s.activeInstanceUrl) : null
   );
-  const authUser = useAuthStore((s) => s.user);
+  const centralUser = useAuthStore((s) => s.user);
+  const isLocalAuth = !activeInstance?.info?.authServerUrl;
+  const displayUser = isLocalAuth ? activeInstance?.user : centralUser;
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
   const [showCreate, setShowCreate] = useState(false);
@@ -118,14 +120,14 @@ export function ChannelSidebar() {
       <div className="h-14 px-2 flex items-center bg-gray-900/50 border-t border-gray-900">
         <div className="flex items-center gap-2 px-2">
           <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-semibold">
-            {authUser?.displayName?.[0]?.toUpperCase() ?? '?'}
+            {displayUser?.displayName?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-white leading-tight">
-              {authUser?.displayName ?? 'Not logged in'}
+              {displayUser?.displayName ?? 'Not logged in'}
             </span>
             <span className="text-xs text-gray-400 leading-tight">
-              {authUser?.username ?? ''}
+              {displayUser?.username ?? ''}
             </span>
           </div>
         </div>

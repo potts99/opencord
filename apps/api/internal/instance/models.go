@@ -6,7 +6,7 @@ type InstanceInfo struct {
 	Description      *string `json:"description"`
 	Version          string  `json:"version"`
 	RegistrationOpen bool    `json:"registrationOpen"`
-	AuthServerURL    string  `json:"authServerUrl"`
+	AuthServerURL    *string `json:"authServerUrl"`
 }
 
 type UpdateInstanceRequest struct {
