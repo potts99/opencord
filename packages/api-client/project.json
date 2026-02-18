@@ -5,7 +5,7 @@
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd packages/api-client && npx tsc"
+        "command": "cd packages/api-client && npx tsc -b"
       },
       "dependsOn": ["shared:build"]
     }
