@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthClient } from '@opencord/api-client';
-import { Button, Input } from '@opencord/ui';
 import { useAuthStore } from '@/stores/auth-store';
 import { validateEmail, validatePassword, validateUsername, validateDisplayName } from '@opencord/shared';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { toast } from 'sonner';
 
 const DEFAULT_AUTH_URL = import.meta.env.VITE_AUTH_SERVER_URL || 'http://localhost:9090';
 
@@ -49,70 +54,88 @@ export function AuthPage() {
       setAuth(DEFAULT_AUTH_URL, authResp.user, authResp.accessToken, authResp.refreshToken);
       navigate('/');
     } catch (e: any) {
-      setError(e.message ?? 'Authentication failed');
+      const msg = e.message ?? 'Authentication failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-gray-800 p-8 rounded-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-white mb-2">
-          {isLogin ? 'Welcome Back' : 'Create Account'}
-        </h1>
-        <p className="text-gray-400 mb-6">
-          {isLogin ? 'Sign in to your OpenCord account.' : 'Create your OpenCord account to get started.'}
-        </p>
-
-        <div className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          {!isLogin && (
-            <>
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-2xl">
+            {isLogin ? 'Welcome Back' : 'Create Account'}
+          </CardTitle>
+          <CardDescription>
+            {isLogin ? 'Sign in to your OpenCord account.' : 'Create your OpenCord account to get started.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
               <Input
-                label="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
+            </div>
+            {!isLogin && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="displayName">Display Name</Label>
+                  <Input
+                    id="displayName"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
               <Input
-                label="Display Name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
               />
-            </>
-          )}
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
-        </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
+          </div>
 
-        <Button onClick={handleSubmit} loading={loading} className="w-full mt-6">
-          {isLogin ? 'Sign In' : 'Create Account'}
-        </Button>
+          <Button onClick={handleSubmit} disabled={loading} className="w-full mt-6">
+            {loading && <Spinner size="sm" className="text-primary-foreground" />}
+            {isLogin ? 'Sign In' : 'Create Account'}
+          </Button>
 
-        <p className="text-center mt-4 text-sm text-gray-400">
-          {isLogin ? "Don't have an account? " : 'Already have an account? '}
-          <button
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError(null);
-            }}
-            className="text-indigo-400 hover:text-indigo-300"
-          >
-            {isLogin ? 'Sign Up' : 'Sign In'}
-          </button>
-        </p>
-      </div>
+          <p className="text-center mt-4 text-sm text-muted-foreground">
+            {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError(null);
+              }}
+              className="text-primary hover:text-primary/80"
+            >
+              {isLogin ? 'Sign Up' : 'Sign In'}
+            </button>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

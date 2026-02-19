@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InstanceConnection } from '@opencord/api-client';
-import { Button, Input } from '@opencord/ui';
 import { useInstanceStore } from '@/stores/instance-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { validateInstanceUrl } from '@opencord/shared';
 import type { InstanceInfo } from '@opencord/shared';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
+import { toast } from 'sonner';
 
 export function AddInstancePage() {
   const [url, setUrl] = useState('');
@@ -57,7 +62,9 @@ export function AddInstancePage() {
         setStep('local-auth');
       }
     } catch {
-      setError('Could not connect to instance. Check the URL and try again.');
+      const msg = 'Could not connect to instance. Check the URL and try again.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -81,7 +88,9 @@ export function AddInstancePage() {
       setInstanceConnection(instanceUrl, conn);
       navigate('/');
     } catch (e: any) {
-      setError(e.message ?? 'Failed to join instance');
+      const msg = e.message ?? 'Failed to join instance';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -120,7 +129,9 @@ export function AddInstancePage() {
       setInstanceConnection(instanceUrl, conn);
       navigate('/');
     } catch (e: any) {
-      setError(e.message ?? 'Authentication failed');
+      const msg = e.message ?? 'Authentication failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -128,126 +139,159 @@ export function AddInstancePage() {
 
   if (step === 'url') {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="bg-gray-800 p-8 rounded-xl w-full max-w-md">
-          <h1 className="text-2xl font-bold text-white mb-2">Add an Instance</h1>
-          <p className="text-gray-400 mb-6">
-            Enter the URL of an OpenCord instance to connect to it.
-          </p>
-          <Input
-            label="Instance URL"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://chat.example.com"
-            error={error}
-            onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-          />
-          <Button
-            onClick={handleConnect}
-            loading={loading}
-            className="w-full mt-4"
-          >
-            Connect
-          </Button>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-2xl">Add an Instance</CardTitle>
+            <CardDescription>
+              Enter the URL of an OpenCord instance to connect to it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="instance-url">Instance URL</Label>
+              <Input
+                id="instance-url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://chat.example.com"
+                onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+              />
+              {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
+            <Button
+              onClick={handleConnect}
+              disabled={loading}
+              className="w-full mt-4"
+            >
+              {loading && <Spinner size="sm" className="text-primary-foreground" />}
+              Connect
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (step === 'local-auth') {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="bg-gray-800 p-8 rounded-xl w-full max-w-md">
-          <h1 className="text-2xl font-bold text-white mb-2">
-            {authMode === 'login' ? 'Log In' : 'Create Account'}
-          </h1>
-          <p className="text-gray-400 mb-6">
-            {instanceInfo?.name ?? instanceUrl}
-          </p>
-          {error && (
-            <p className="text-red-400 text-sm mb-4">{error}</p>
-          )}
-          <div className="space-y-3">
-            <Input
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-            {authMode === 'register' && (
-              <>
-                <Input
-                  label="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="username"
-                />
-                <Input
-                  label="Display Name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Display Name (optional)"
-                />
-              </>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-2xl">
+              {authMode === 'login' ? 'Log In' : 'Create Account'}
+            </CardTitle>
+            <CardDescription>
+              {instanceInfo?.name ?? instanceUrl}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <p className="text-sm text-destructive mb-4">{error}</p>
             )}
-            <Input
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              onKeyDown={(e) => e.key === 'Enter' && handleLocalAuth()}
-            />
-          </div>
-          <Button onClick={handleLocalAuth} loading={loading} className="w-full mt-4">
-            {authMode === 'login' ? 'Log In' : 'Create Account'}
-          </Button>
-          <button
-            onClick={() => {
-              setAuthMode(authMode === 'login' ? 'register' : 'login');
-              setError(null);
-            }}
-            className="w-full mt-3 text-sm text-gray-400 hover:text-gray-300"
-          >
-            {authMode === 'login' ? 'Need an account? Register' : 'Already have an account? Log in'}
-          </button>
-          <button
-            onClick={() => { setStep('url'); setError(null); }}
-            className="w-full mt-1 text-sm text-gray-400 hover:text-gray-300"
-          >
-            Back
-          </button>
-        </div>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="local-email">Email</Label>
+                <Input
+                  id="local-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                />
+              </div>
+              {authMode === 'register' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="local-username">Username</Label>
+                    <Input
+                      id="local-username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="username"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="local-displayname">Display Name</Label>
+                    <Input
+                      id="local-displayname"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Display Name (optional)"
+                    />
+                  </div>
+                </>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="local-password">Password</Label>
+                <Input
+                  id="local-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  onKeyDown={(e) => e.key === 'Enter' && handleLocalAuth()}
+                />
+              </div>
+            </div>
+            <Button onClick={handleLocalAuth} disabled={loading} className="w-full mt-4">
+              {loading && <Spinner size="sm" className="text-primary-foreground" />}
+              {authMode === 'login' ? 'Log In' : 'Create Account'}
+            </Button>
+            <button
+              onClick={() => {
+                setAuthMode(authMode === 'login' ? 'register' : 'login');
+                setError(null);
+              }}
+              className="w-full mt-3 text-sm text-muted-foreground hover:text-foreground/80"
+            >
+              {authMode === 'login' ? 'Need an account? Register' : 'Already have an account? Log in'}
+            </button>
+            <button
+              onClick={() => { setStep('url'); setError(null); }}
+              className="w-full mt-1 text-sm text-muted-foreground hover:text-foreground/80"
+            >
+              Back
+            </button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-gray-800 p-8 rounded-xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-white mb-2">Join Instance</h1>
-        <p className="text-gray-400 mb-6">
-          Enter an invite code to join {instanceUrl}
-        </p>
-        <Input
-          label="Invite Code"
-          value={inviteCode}
-          onChange={(e) => setInviteCode(e.target.value)}
-          placeholder="Enter invite code"
-          error={error}
-          onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-        />
-        <Button onClick={handleJoin} loading={loading} className="w-full mt-4">
-          Join
-        </Button>
-        <button
-          onClick={() => { setStep('url'); setError(null); }}
-          className="w-full mt-3 text-sm text-gray-400 hover:text-gray-300"
-        >
-          Back
-        </button>
-      </div>
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-2xl">Join Instance</CardTitle>
+          <CardDescription>
+            Enter an invite code to join {instanceUrl}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="invite-code">Invite Code</Label>
+            <Input
+              id="invite-code"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              placeholder="Enter invite code"
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+            />
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <Button onClick={handleJoin} disabled={loading} className="w-full mt-4">
+            {loading && <Spinner size="sm" className="text-primary-foreground" />}
+            Join
+          </Button>
+          <button
+            onClick={() => { setStep('url'); setError(null); }}
+            className="w-full mt-3 text-sm text-muted-foreground hover:text-foreground/80"
+          >
+            Back
+          </button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

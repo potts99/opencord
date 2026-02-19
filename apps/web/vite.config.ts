@@ -9,7 +9,6 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@opencord/shared': path.resolve(__dirname, '../../packages/shared/src'),
-      '@opencord/ui': path.resolve(__dirname, '../../packages/ui/src'),
       '@opencord/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
     },
   },

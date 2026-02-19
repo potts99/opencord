@@ -10,7 +10,7 @@ export function Layout() {
     <div className="flex h-screen overflow-hidden">
       <InstanceSidebar />
       <ChannelSidebar />
-      <main className="flex-1 flex flex-col bg-gray-700">
+      <main className="flex-1 flex flex-col bg-accent">
         <Outlet />
       </main>
     </div>

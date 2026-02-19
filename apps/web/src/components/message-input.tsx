@@ -31,19 +31,19 @@ export function MessageInput({ onSend, onTyping, disabled, channelName }: Messag
 
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-6">
-      <div className="bg-gray-600 rounded-lg flex items-center px-4">
+      <div className="bg-secondary rounded-lg flex items-center px-4">
         <input
           value={content}
           onChange={handleChange}
           placeholder={`Message #${channelName ?? 'channel'}`}
           disabled={disabled}
-          className="flex-1 bg-transparent py-3 text-white placeholder-gray-400 focus:outline-none"
+          className="flex-1 bg-transparent py-3 text-foreground placeholder-muted-foreground focus:outline-none"
           maxLength={4000}
         />
         <button
           type="submit"
           disabled={!content.trim() || disabled}
-          className="text-gray-400 hover:text-white disabled:opacity-30"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-30"
         >
           <svg className="w-5 h-5 rotate-90" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
