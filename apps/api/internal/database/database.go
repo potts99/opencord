@@ -36,9 +36,26 @@ func RunMigrations(db *sql.DB, migrationsPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("migration failed: %w", err)
+
+	err = m.Up()
+	if err == nil || err == migrate.ErrNoChange {
+		log.Println("migrations applied successfully")
+		return nil
 	}
-	log.Println("migrations applied successfully")
-	return nil
+
+	// If the database is in a dirty state (previous migration failed mid-way),
+	// force back to the last clean version and retry.
+	if version, dirty, verr := m.Version(); verr == nil && dirty {
+		log.Printf("dirty migration detected at version %d, forcing to version %d and retrying", version, version-1)
+		if ferr := m.Force(int(version) - 1); ferr != nil {
+			return fmt.Errorf("failed to force migration version: %w", ferr)
+		}
+		if err = m.Up(); err != nil && err != migrate.ErrNoChange {
+			return fmt.Errorf("migration retry failed: %w", err)
+		}
+		log.Println("migrations applied successfully after dirty state recovery")
+		return nil
+	}
+
+	return fmt.Errorf("migration failed: %w", err)
 }

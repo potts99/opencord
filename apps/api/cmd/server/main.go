@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -38,8 +39,16 @@ func main() {
 	}
 	defer db.Close()
 
-	// Run migrations
-	if err := database.RunMigrations(db, "migrations"); err != nil {
+	// Run migrations — resolve path relative to executable so it works
+	// regardless of the working directory the binary is started from.
+	migrationsPath := "migrations"
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "migrations")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			migrationsPath = candidate
+		}
+	}
+	if err := database.RunMigrations(db, migrationsPath); err != nil {
 		log.Printf("migration warning: %v", err)
 	}
 
