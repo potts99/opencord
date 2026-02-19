@@ -96,7 +96,7 @@ export function useMembers() {
   });
 }
 
-export function useTypingIndicator(channelId: string | undefined) {
+export function useTypingIndicator(channelId: string | undefined, currentUserId?: string) {
   const connection = useActiveConnection();
   const [typers, setTypers] = useState<Map<string, { name: string; timeout: ReturnType<typeof setTimeout> }>>(new Map());
 
@@ -107,6 +107,7 @@ export function useTypingIndicator(channelId: string | undefined) {
       if (event.event === 'typing_start') {
         const data = event.data as { userId: string; username: string; channelId: string };
         if (data.channelId !== channelId) return;
+        if (data.userId === currentUserId) return;
 
         setTypers((prev) => {
           const next = new Map(prev);
@@ -132,7 +133,7 @@ export function useTypingIndicator(channelId: string | undefined) {
         return new Map();
       });
     };
-  }, [connection, channelId]);
+  }, [connection, channelId, currentUserId]);
 
   const names = Array.from(typers.values()).map((t) => t.name);
   return names;

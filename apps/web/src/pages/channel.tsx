@@ -43,7 +43,7 @@ export function ChannelPage() {
   const sendMessage = useSendMessage(channelId!);
   const editMessage = useEditMessage(channelId!);
   const deleteMessage = useDeleteMessage(channelId!);
-  const typingNames = useTypingIndicator(channelId);
+  const typingNames = useTypingIndicator(channelId, currentUserId);
 
   const allMessages = data?.pages.flatMap((p) => p.data) ?? [];
 
