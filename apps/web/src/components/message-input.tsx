@@ -9,7 +9,7 @@ interface MessageInputProps {
 
 export function MessageInput({ onSend, onTyping, disabled, channelName }: MessageInputProps) {
   const [content, setContent] = useState('');
-  const typingTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
