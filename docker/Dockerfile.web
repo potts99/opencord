@@ -15,6 +15,9 @@ COPY apps/web/ ./apps/web/
 # Install dependencies
 RUN npm install --legacy-peer-deps
 
+# Ensure Rollup native bindings are installed for Alpine/musl
+RUN npm rebuild rollup
+
 # Build
 RUN npx nx run web:build
 
