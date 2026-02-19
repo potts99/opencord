@@ -6,7 +6,20 @@ import { useAuthStore } from '@/stores/auth-store';
 import type { Channel } from '@opencord/shared';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { hashColor, getInitials } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { hashColor } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function ChannelSidebar() {
   const { channelId } = useParams();
@@ -20,17 +33,21 @@ export function ChannelSidebar() {
   const displayUser = isLocalAuth ? activeInstance?.user : centralUser;
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
-  const [showCreate, setShowCreate] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
 
   const handleCreateChannel = () => {
-    if (!newChannelName.trim()) return;
+    const name = newChannelName.trim();
+    if (!name) return;
     createChannel.mutate(
-      { name: newChannelName.trim(), type: 'text' },
+      { name, type: 'text' },
       {
         onSuccess: () => {
           setNewChannelName('');
-          setShowCreate(false);
+          setDialogOpen(false);
+        },
+        onError: (e: any) => {
+          toast.error(e.message ?? 'Failed to create channel');
         },
       }
     );
@@ -57,25 +74,12 @@ export function ChannelSidebar() {
               Text Channels
             </span>
             <button
-              onClick={() => setShowCreate(!showCreate)}
+              onClick={() => setDialogOpen(true)}
               className="text-muted-foreground hover:text-foreground text-lg leading-none"
             >
               +
             </button>
           </div>
-
-          {showCreate && (
-            <div className="px-2 mb-2">
-              <input
-                value={newChannelName}
-                onChange={(e) => setNewChannelName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateChannel()}
-                placeholder="new-channel"
-                className="w-full px-2 py-1 text-sm bg-input border border-border rounded text-foreground"
-                autoFocus
-              />
-            </div>
-          )}
 
           {channels
             ?.filter((ch) => ch.type === 'text')
@@ -141,6 +145,43 @@ export function ChannelSidebar() {
           </div>
         </div>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open) setNewChannelName('');
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Channel</DialogTitle>
+            <DialogDescription>
+              Add a new text channel to this instance.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="channel-name">Channel Name</Label>
+            <Input
+              id="channel-name"
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateChannel()}
+              placeholder="new-channel"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateChannel}
+              disabled={!newChannelName.trim() || createChannel.isPending}
+            >
+              {createChannel.isPending && <Spinner size="sm" className="text-primary-foreground" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
