@@ -1,7 +1,8 @@
 import { useParams } from 'react-router-dom';
-import { useMessages, useSendMessage, useWSMessages } from '@/hooks/use-messages';
+import { useMessages, useSendMessage, useEditMessage, useDeleteMessage, useWSMessages, useWSPresence, useTypingIndicator } from '@/hooks/use-messages';
 import { useChannels } from '@/hooks/use-channels';
 import { useActiveConnection } from '@/hooks/use-connection';
+import { useAuthStore } from '@/stores/auth-store';
 import { MessageList } from '@/components/message-list';
 import { MessageInput } from '@/components/message-input';
 import { MemberSidebar } from '@/components/member-sidebar';
@@ -25,6 +26,7 @@ function MessageSkeleton() {
 export function ChannelPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const connection = useActiveConnection();
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const { data: channels } = useChannels();
   const channel = channels?.find((c) => c.id === channelId);
 
@@ -36,8 +38,12 @@ export function ChannelPage() {
     isFetchingNextPage,
   } = useMessages(channelId);
   useWSMessages(channelId);
+  useWSPresence();
 
   const sendMessage = useSendMessage(channelId!);
+  const editMessage = useEditMessage(channelId!);
+  const deleteMessage = useDeleteMessage(channelId!);
+  const typingNames = useTypingIndicator(channelId);
 
   const allMessages = data?.pages.flatMap((p) => p.data) ?? [];
 
@@ -47,6 +53,14 @@ export function ChannelPage() {
 
   const handleTyping = () => {
     connection?.sendTyping(channelId!);
+  };
+
+  const handleEdit = (messageId: string, content: string) => {
+    editMessage.mutate({ messageId, content });
+  };
+
+  const handleDelete = (messageId: string) => {
+    deleteMessage.mutate(messageId);
   };
 
   if (isLoading) {
@@ -82,13 +96,27 @@ export function ChannelPage() {
           hasMore={!!hasNextPage}
           onLoadMore={() => fetchNextPage()}
           isLoading={isFetchingNextPage}
+          currentUserId={currentUserId}
+          onEditMessage={handleEdit}
+          onDeleteMessage={handleDelete}
         />
 
-        <MessageInput
-          onSend={handleSend}
-          onTyping={handleTyping}
-          channelName={channel?.name}
-        />
+        <div className="relative">
+          {typingNames.length > 0 && (
+            <div className="absolute -top-6 left-4 text-xs text-muted-foreground">
+              {typingNames.length === 1
+                ? `${typingNames[0]} is typing...`
+                : typingNames.length === 2
+                  ? `${typingNames[0]} and ${typingNames[1]} are typing...`
+                  : `${typingNames[0]} and ${typingNames.length - 1} others are typing...`}
+            </div>
+          )}
+          <MessageInput
+            onSend={handleSend}
+            onTyping={handleTyping}
+            channelName={channel?.name}
+          />
+        </div>
       </div>
 
       <MemberSidebar />

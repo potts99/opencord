@@ -7,14 +7,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/opencord/api/internal/auth"
+	"github.com/opencord/api/internal/ws"
 )
 
 type Handler struct {
 	repo Repository
+	hub  *ws.Hub
 }
 
-func NewHandler(repo Repository) *Handler {
-	return &Handler{repo: repo}
+func NewHandler(repo Repository, hub *ws.Hub) *Handler {
+	return &Handler{repo: repo, hub: hub}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +28,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if members == nil {
 		members = []Member{}
 	}
+
+	// Annotate online status from hub
+	onlineUsers := h.hub.GetOnlineUserIDs()
+	for i := range members {
+		members[i].Online = onlineUsers[members[i].UserID]
+	}
+
 	writeJSON(w, members, http.StatusOK)
 }
 
@@ -42,11 +51,24 @@ func (h *Handler) Kick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check caller is admin/owner
-	caller, err := h.repo.GetByUserID(callerID)
-	if err != nil || (caller.Role != "admin" && caller.Role != "owner") {
-		writeError(w, "insufficient permissions", http.StatusForbidden)
-		return
+	// Self-leave: any member can remove themselves (except owner)
+	if targetUserID == callerID {
+		caller, err := h.repo.GetByUserID(callerID)
+		if err != nil {
+			writeError(w, "member not found", http.StatusNotFound)
+			return
+		}
+		if caller.Role == "owner" {
+			writeError(w, "owner cannot leave the instance", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Kicking someone else: must be admin/owner
+		caller, err := h.repo.GetByUserID(callerID)
+		if err != nil || (caller.Role != "admin" && caller.Role != "owner") {
+			writeError(w, "insufficient permissions", http.StatusForbidden)
+			return
+		}
 	}
 
 	if err := h.repo.Delete(targetUserID); err != nil {

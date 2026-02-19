@@ -41,7 +41,7 @@ func (r *PostgresRepository) Create(userID uuid.UUID, role string) (*Member, err
 
 func (r *PostgresRepository) GetAll() ([]Member, error) {
 	rows, err := r.db.Query(
-		`SELECT m.id, m.user_id, u.username, u.display_name, u.avatar_url, m.role, m.joined_at
+		`SELECT m.id, m.user_id, u.username, u.display_name, u.avatar_url, m.role, m.joined_at, u.last_seen_at
 		 FROM members m JOIN users u ON u.id = m.user_id
 		 ORDER BY m.joined_at`,
 	)
@@ -53,7 +53,7 @@ func (r *PostgresRepository) GetAll() ([]Member, error) {
 	var members []Member
 	for rows.Next() {
 		var m Member
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt, &m.LastSeenAt); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -64,11 +64,11 @@ func (r *PostgresRepository) GetAll() ([]Member, error) {
 func (r *PostgresRepository) GetByUserID(userID uuid.UUID) (*Member, error) {
 	m := &Member{}
 	err := r.db.QueryRow(
-		`SELECT m.id, m.user_id, u.username, u.display_name, u.avatar_url, m.role, m.joined_at
+		`SELECT m.id, m.user_id, u.username, u.display_name, u.avatar_url, m.role, m.joined_at, u.last_seen_at
 		 FROM members m JOIN users u ON u.id = m.user_id
 		 WHERE m.user_id = $1`,
 		userID,
-	).Scan(&m.ID, &m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt)
+	).Scan(&m.ID, &m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt, &m.LastSeenAt)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +86,8 @@ func (r *PostgresRepository) UpdateRole(userID uuid.UUID, role string) (*Member,
 		return nil, err
 	}
 	_ = r.db.QueryRow(
-		`SELECT username, display_name, avatar_url FROM users WHERE id = $1`, userID,
-	).Scan(&m.Username, &m.DisplayName, &m.AvatarURL)
+		`SELECT username, display_name, avatar_url, last_seen_at FROM users WHERE id = $1`, userID,
+	).Scan(&m.Username, &m.DisplayName, &m.AvatarURL, &m.LastSeenAt)
 	return m, nil
 }
 

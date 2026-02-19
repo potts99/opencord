@@ -17,10 +17,11 @@ const (
 )
 
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	send   chan []byte
-	UserID uuid.UUID
+	hub      *Hub
+	conn     *websocket.Conn
+	send     chan []byte
+	UserID   uuid.UUID
+	Username string
 }
 
 type IncomingEvent struct {
@@ -28,12 +29,13 @@ type IncomingEvent struct {
 	Data  json.RawMessage `json:"data"`
 }
 
-func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID, username string) *Client {
 	return &Client{
-		hub:    hub,
-		conn:   conn,
-		send:   make(chan []byte, 256),
-		UserID: userID,
+		hub:      hub,
+		conn:     conn,
+		send:     make(chan []byte, 256),
+		UserID:   userID,
+		Username: username,
 	}
 }
 
@@ -129,6 +131,7 @@ func (c *Client) handleEvent(event IncomingEvent) {
 			Type: "typing_start",
 			Data: map[string]interface{}{
 				"userId":    c.UserID,
+				"username":  c.Username,
 				"channelId": payload.ChannelID,
 			},
 		})

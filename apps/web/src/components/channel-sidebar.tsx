@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
-import { useChannels, useCreateChannel } from '@/hooks/use-channels';
+import { useChannels, useCreateChannel, useUpdateChannel, useDeleteChannel } from '@/hooks/use-channels';
 import { useInstanceStore } from '@/stores/instance-store';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Channel } from '@opencord/shared';
@@ -18,6 +18,22 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from '@/components/ui/context-menu';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { hashColor } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -33,8 +49,13 @@ export function ChannelSidebar() {
   const displayUser = isLocalAuth ? activeInstance?.user : centralUser;
   const { data: channels } = useChannels();
   const createChannel = useCreateChannel();
+  const updateChannel = useUpdateChannel();
+  const deleteChannel = useDeleteChannel();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
+  const [editTarget, setEditTarget] = useState<Channel | null>(null);
+  const [editName, setEditName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
 
   const handleCreateChannel = () => {
     const name = newChannelName.trim();
@@ -53,6 +74,42 @@ export function ChannelSidebar() {
     );
   };
 
+  const handleRename = () => {
+    const name = editName.trim();
+    if (!name || !editTarget) return;
+    updateChannel.mutate(
+      { id: editTarget.id, name },
+      {
+        onSuccess: () => {
+          setEditTarget(null);
+          setEditName('');
+        },
+        onError: (e: any) => {
+          toast.error(e.message ?? 'Failed to rename channel');
+        },
+      }
+    );
+  };
+
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    const deletedId = deleteTarget.id;
+    deleteChannel.mutate(deletedId, {
+      onSuccess: () => {
+        setDeleteTarget(null);
+        if (channelId === deletedId && activeUrl) {
+          const remaining = channels?.filter((c) => c.id !== deletedId);
+          if (remaining && remaining.length > 0) {
+            navigate(`/instance/${encodeURIComponent(activeUrl)}/channel/${remaining[0].id}`);
+          }
+        }
+      },
+      onError: (e: any) => {
+        toast.error(e.message ?? 'Failed to delete channel');
+      },
+    });
+  };
+
   const navigateToChannel = (ch: Channel) => {
     if (!activeUrl) return;
     const encoded = encodeURIComponent(activeUrl);
@@ -60,6 +117,35 @@ export function ChannelSidebar() {
   };
 
   const userName = displayUser?.displayName ?? 'Not logged in';
+
+  const renderChannelButton = (ch: Channel, icon: React.ReactNode) => (
+    <ContextMenu key={ch.id}>
+      <ContextMenuTrigger asChild>
+        <button
+          onClick={() => navigateToChannel(ch)}
+          className={`w-full px-2 py-1.5 rounded text-left text-sm flex items-center gap-2 ${
+            channelId === ch.id
+              ? 'bg-secondary text-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground/80'
+          }`}
+        >
+          {icon}
+          {ch.name}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => { setEditTarget(ch); setEditName(ch.name); }}>
+          Edit Channel
+        </ContextMenuItem>
+        <ContextMenuItem
+          variant="destructive"
+          onSelect={() => setDeleteTarget(ch)}
+        >
+          Delete Channel
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 
   return (
     <div className="w-60 bg-card flex flex-col">
@@ -83,20 +169,7 @@ export function ChannelSidebar() {
 
           {channels
             ?.filter((ch) => ch.type === 'text')
-            .map((ch) => (
-              <button
-                key={ch.id}
-                onClick={() => navigateToChannel(ch)}
-                className={`w-full px-2 py-1.5 rounded text-left text-sm flex items-center gap-2 ${
-                  channelId === ch.id
-                    ? 'bg-secondary text-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground/80'
-                }`}
-              >
-                <span className="text-muted-foreground">#</span>
-                {ch.name}
-              </button>
-            ))}
+            .map((ch) => renderChannelButton(ch, <span className="text-muted-foreground">#</span>))}
 
           {channels?.some((ch) => ch.type === 'voice') && (
             <>
@@ -107,21 +180,10 @@ export function ChannelSidebar() {
               </div>
               {channels
                 .filter((ch) => ch.type === 'voice')
-                .map((ch) => (
-                  <button
-                    key={ch.id}
-                    onClick={() => navigateToChannel(ch)}
-                    className={`w-full px-2 py-1.5 rounded text-left text-sm flex items-center gap-2 ${
-                      channelId === ch.id
-                        ? 'bg-secondary text-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground/80'
-                    }`}
-                  >
-                    <svg className="w-4 h-4 text-muted-foreground" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" />
-                    </svg>
-                    {ch.name}
-                  </button>
+                .map((ch) => renderChannelButton(ch,
+                  <svg className="w-4 h-4 text-muted-foreground" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" />
+                  </svg>
                 ))}
             </>
           )}
@@ -146,6 +208,7 @@ export function ChannelSidebar() {
         </div>
       </div>
 
+      {/* Create Channel Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
         if (!open) setNewChannelName('');
@@ -182,6 +245,60 @@ export function ChannelSidebar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rename Channel Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => {
+        if (!open) { setEditTarget(null); setEditName(''); }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Channel</DialogTitle>
+            <DialogDescription>
+              Rename this channel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="edit-channel-name">Channel Name</Label>
+            <Input
+              id="edit-channel-name"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRename}
+              disabled={!editName.trim() || updateChannel.isPending}
+            >
+              {updateChannel.isPending && <Spinner size="sm" className="text-primary-foreground" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Channel Confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete #{deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this channel and all its messages.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

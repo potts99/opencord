@@ -11,6 +11,7 @@ type Repository interface {
 	GetByID(id uuid.UUID) (*User, error)
 	Update(id uuid.UUID, req UpdateUserRequest) (*User, error)
 	UpsertFromClaims(claims *auth.TokenClaims) error
+	UpdateLastSeen(id uuid.UUID) error
 }
 
 type PostgresRepository struct {
@@ -24,8 +25,8 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 func (r *PostgresRepository) GetByID(id uuid.UUID) (*User, error) {
 	u := &User{}
 	err := r.db.QueryRow(
-		`SELECT id, email, username, display_name, avatar_url, created_at FROM users WHERE id = $1`, id,
-	).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+		`SELECT id, email, username, display_name, avatar_url, created_at, last_seen_at FROM users WHERE id = $1`, id,
+	).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.AvatarURL, &u.CreatedAt, &u.LastSeenAt)
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +40,9 @@ func (r *PostgresRepository) Update(id uuid.UUID, req UpdateUserRequest) (*User,
 			display_name = COALESCE($2, display_name),
 			avatar_url = COALESCE($3, avatar_url)
 		 WHERE id = $1
-		 RETURNING id, email, username, display_name, avatar_url, created_at`,
+		 RETURNING id, email, username, display_name, avatar_url, created_at, last_seen_at`,
 		id, req.DisplayName, req.AvatarURL,
-	).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.Username, &u.DisplayName, &u.AvatarURL, &u.CreatedAt, &u.LastSeenAt)
 	if err != nil {
 		return nil, err
 	}
@@ -60,5 +61,10 @@ func (r *PostgresRepository) UpsertFromClaims(claims *auth.TokenClaims) error {
 			updated_at = NOW()`,
 		claims.UserID, claims.Username, claims.DisplayName, claims.AvatarURL,
 	)
+	return err
+}
+
+func (r *PostgresRepository) UpdateLastSeen(id uuid.UUID) error {
+	_, err := r.db.Exec(`UPDATE users SET last_seen_at = NOW() WHERE id = $1`, id)
 	return err
 }

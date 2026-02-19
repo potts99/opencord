@@ -6,6 +6,7 @@ export interface User {
   displayName: string;
   avatarUrl: string | null;
   createdAt: string;
+  lastSeenAt: string | null;
 }
 
 // Auth
@@ -92,6 +93,8 @@ export interface Member {
   avatarUrl: string | null;
   role: 'owner' | 'admin' | 'member';
   joinedAt: string;
+  online: boolean;
+  lastSeenAt: string | null;
 }
 
 export interface UpdateMemberRequest {
@@ -135,6 +138,11 @@ export type WSEventType =
 export interface WSEvent<T = unknown> {
   event: WSEventType;
   data: T;
+}
+
+export interface PresenceUpdateEvent {
+  userId: string;
+  status: 'online' | 'offline';
 }
 
 // API Response wrapper

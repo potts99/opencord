@@ -1,12 +1,12 @@
 {
   "project": "OpenCord",
   "version": "0.2.0",
-  "lastUpdated": "2026-02-17",
+  "lastUpdated": "2026-02-19",
   "summary": {
     "totalFeatures": 152,
-    "completed": 68,
-    "remaining": 84,
-    "percentComplete": 45
+    "completed": 71,
+    "remaining": 81,
+    "percentComplete": 47
   },
   "phases": [
     {
@@ -148,7 +148,7 @@
       "id": 6,
       "name": "Presence & Typing",
       "status": "in_progress",
-      "completed": 2,
+      "completed": 5,
       "total": 11,
       "features": [
         { "id": "6.1", "name": "Typing indicator WS event", "status": "done" },
@@ -156,12 +156,12 @@
         { "id": "6.3", "name": "Typing indicator display UI", "status": "todo", "priority": "high" },
         { "id": "6.4", "name": "Multiple users typing display", "status": "todo", "priority": "medium" },
         { "id": "6.5", "name": "Typing timeout (5s)", "status": "todo", "priority": "high" },
-        { "id": "6.6", "name": "Online/offline via WS heartbeat", "status": "todo", "priority": "high" },
+        { "id": "6.6", "name": "Online/offline via WS heartbeat", "status": "done", "files": ["apps/api/internal/ws/hub.go", "apps/api/internal/ws/client.go"] },
         { "id": "6.7", "name": "Presence state in Redis", "status": "todo", "priority": "medium" },
-        { "id": "6.8", "name": "Online/offline dot on avatars", "status": "todo", "priority": "high" },
+        { "id": "6.8", "name": "Online/offline dot on avatars", "status": "done", "files": ["apps/web/src/components/member-sidebar.tsx", "apps/web/src/hooks/use-messages.ts"] },
         { "id": "6.9", "name": "Idle status detection", "status": "todo", "priority": "low" },
         { "id": "6.10", "name": "Custom status messages", "status": "todo", "priority": "low" },
-        { "id": "6.11", "name": "Last seen timestamp", "status": "todo", "priority": "low" }
+        { "id": "6.11", "name": "Last seen timestamp", "status": "done", "files": ["apps/api/migrations/000002_add_last_seen_at.up.sql", "apps/api/internal/user/repository.go"] }
       ]
     },
     {

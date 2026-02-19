@@ -85,13 +85,18 @@ func main() {
 
 	// WebSocket hub
 	hub := ws.NewHub()
+	hub.OnUserOffline = func(userID uuid.UUID) {
+		if err := userRepo.UpdateLastSeen(userID); err != nil {
+			log.Printf("failed to update last_seen_at for user %s: %v", userID, err)
+		}
+	}
 	go hub.Run()
 
 	// Handlers
 	userHandler := user.NewHandler(userRepo)
 	channelHandler := channel.NewHandler(channelRepo)
 	messageHandler := message.NewHandler(messageRepo, hub)
-	memberHandler := member.NewHandler(memberRepo)
+	memberHandler := member.NewHandler(memberRepo, hub)
 	inviteHandler := invite.NewHandler(inviteRepo, memberRepo)
 	instanceHandler := instance.NewHandler(instanceRepo)
 	uploadHandler := upload.NewHandler(uploadPath, instanceURL)
@@ -163,16 +168,16 @@ func main() {
 	})
 
 	// WebSocket (auth via query param)
-	r.Get("/api/ws", ws.HandleWebSocket(hub, func(token string) (uuid.UUID, error) {
+	r.Get("/api/ws", ws.HandleWebSocket(hub, func(token string) (uuid.UUID, string, error) {
 		claims, err := authHandler.ValidateToken(token)
 		if err != nil {
-			return uuid.UUID{}, err
+			return uuid.UUID{}, "", err
 		}
 		// Upsert user cache for WS connections in central mode
 		if !authHandler.IsLocalAuth() {
 			_ = userRepo.UpsertFromClaims(claims)
 		}
-		return claims.UserID, nil
+		return claims.UserID, claims.Username, nil
 	}))
 
 	authMode := "local"

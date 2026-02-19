@@ -16,7 +16,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type AuthValidator func(token string) (uuid.UUID, error)
+type AuthValidator func(token string) (uuid.UUID, string, error)
 
 func HandleWebSocket(hub *Hub, validateToken AuthValidator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +27,7 @@ func HandleWebSocket(hub *Hub, validateToken AuthValidator) http.HandlerFunc {
 			return
 		}
 
-		userID, err := validateToken(token)
+		userID, username, err := validateToken(token)
 		if err != nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
@@ -39,7 +39,7 @@ func HandleWebSocket(hub *Hub, validateToken AuthValidator) http.HandlerFunc {
 			return
 		}
 
-		client := NewClient(hub, conn, userID)
+		client := NewClient(hub, conn, userID, username)
 		hub.register <- client
 
 		go client.WritePump()

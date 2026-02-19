@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type Event struct {
@@ -13,11 +15,16 @@ type Event struct {
 
 type Hub struct {
 	clients    map[*Client]bool
-	channels   map[string]map[*Client]bool // channelID -> clients
+	channels   map[string]map[*Client]bool   // channelID -> clients
+	users      map[uuid.UUID]map[*Client]bool // userID -> clients (multi-tab)
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan channelEvent
 	mu         sync.RWMutex
+
+	// OnUserOffline is called when a user's last connection disconnects.
+	// Wired in main.go to persist last_seen_at.
+	OnUserOffline func(userID uuid.UUID)
 }
 
 type channelEvent struct {
@@ -29,6 +36,7 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		channels:   make(map[string]map[*Client]bool),
+		users:      make(map[uuid.UUID]map[*Client]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan channelEvent, 256),
@@ -41,7 +49,25 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+
+			// Track user presence
+			wasOffline := len(h.users[client.UserID]) == 0
+			if h.users[client.UserID] == nil {
+				h.users[client.UserID] = make(map[*Client]bool)
+			}
+			h.users[client.UserID][client] = true
 			h.mu.Unlock()
+
+			// Broadcast online if user was offline
+			if wasOffline {
+				h.BroadcastToAll(Event{
+					Type: "presence_update",
+					Data: map[string]interface{}{
+						"userId": client.UserID,
+						"status": "online",
+					},
+				})
+			}
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -53,6 +79,30 @@ func (h *Hub) Run() {
 					delete(clients, client)
 					if len(clients) == 0 {
 						delete(h.channels, chID)
+					}
+				}
+
+				// Remove from user presence tracking
+				if userClients, ok := h.users[client.UserID]; ok {
+					delete(userClients, client)
+					if len(userClients) == 0 {
+						delete(h.users, client.UserID)
+						h.mu.Unlock()
+
+						// Broadcast offline
+						h.BroadcastToAll(Event{
+							Type: "presence_update",
+							Data: map[string]interface{}{
+								"userId": client.UserID,
+								"status": "offline",
+							},
+						})
+
+						// Persist last_seen_at
+						if h.OnUserOffline != nil {
+							go h.OnUserOffline(client.UserID)
+						}
+						continue
 					}
 				}
 			}
@@ -122,4 +172,23 @@ func (h *Hub) UnsubscribeFromChannel(client *Client, channelID string) {
 			delete(h.channels, channelID)
 		}
 	}
+}
+
+// GetOnlineUserIDs returns a set of user IDs that currently have at least one connected client.
+func (h *Hub) GetOnlineUserIDs() map[uuid.UUID]bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	online := make(map[uuid.UUID]bool, len(h.users))
+	for userID := range h.users {
+		online[userID] = true
+	}
+	return online
+}
+
+// IsUserOnline returns true if the user has at least one connected client.
+func (h *Hub) IsUserOnline(userID uuid.UUID) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.users[userID]) > 0
 }
